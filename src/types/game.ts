@@ -165,6 +165,7 @@ export interface SkillOrSpellRef {
   prerequisiteSkillIds?: string[]; // Skill IDs the model must already possess (innate or learned)
   requiredSpeciesIds?: string[]; // Species IDs required to learn this skill (e.g. Shrew Knight Errant for Lance Strike)
   requiresSpell?: boolean; // True if the skill requires the model to know at least 1 Spell (e.g. Gifted, Fae Blooded)
+  pageReference?: string; // Official 2nd Edition Rulebook page reference (e.g. "Page 124")
   description: string;
 }
 

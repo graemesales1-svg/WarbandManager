@@ -27,6 +27,7 @@ import {
   getItemQuantity,
   getNextXpThreshold,
   getStartingFatePointsForRole,
+  getSkillOrSpellPageReference,
   getValidSlotsForEquipment,
   isEquipmentStackable,
   MAX_FIGHTER_FATE_POINTS,
@@ -38,6 +39,7 @@ import {
   StatRollAndBreakdownModal,
   ModalInspectTab,
 } from './StatRollAndBreakdownModal';
+import { SkillOrSpellDetailModal } from './SkillOrSpellDetailModal';
 import {
   UserPlus,
   Coins,
@@ -302,6 +304,10 @@ export const WarbandRosterView: React.FC = () => {
   const [inspectTarget, setInspectTarget] = useState<{
     fighterId: string;
     tab: ModalInspectTab;
+  } | null>(null);
+  const [selectedSkillOrSpell, setSelectedSkillOrSpell] = useState<{
+    fighterId: string;
+    skillOrSpellId: string;
   } | null>(null);
 
   if (!activeWarband) {
@@ -1808,39 +1814,62 @@ export const WarbandRosterView: React.FC = () => {
 
                 {/* Innate & Learned Skills + Spells */}
                 <div className="bg-stone-950/60 border border-stone-800/80 rounded-xl p-3">
-                  <div className="text-stone-400 font-semibold mb-1.5 flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-emerald-400" /> Skills & Spells
+                  <div className="text-stone-400 font-semibold mb-1.5 flex items-center justify-between gap-1.5">
+                    <span className="flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-emerald-400" /> Skills &amp; Spells
+                    </span>
+                    <span className="text-[10px] font-normal text-stone-500 italic">
+                      Tap badge for rules
+                    </span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {allSkillIds.map((skId, idx) => {
                       const sk = rules.skillsAndSpells.find((s) => s.id === skId);
                       if (!sk) return null;
                       const isInnate = idx < innateCount;
+                      const pageRef = getSkillOrSpellPageReference(sk).replace('Page ', 'p.');
                       return (
-                        <span
+                        <button
                           key={`${skId}-${idx}`}
-                          title={sk.description}
-                          className={`px-2 py-0.5 rounded text-[11px] font-medium ${
+                          type="button"
+                          onClick={() =>
+                            setSelectedSkillOrSpell({
+                              fighterId: fighter.id,
+                              skillOrSpellId: skId,
+                            })
+                          }
+                          title={`${sk.name} (${getSkillOrSpellPageReference(sk)}): ${sk.description}`}
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium transition cursor-pointer ${
                             isInnate
-                              ? 'bg-stone-800 text-stone-300'
-                              : 'bg-emerald-950/80 text-emerald-300 border border-emerald-800/50'
+                              ? 'bg-stone-800 hover:bg-stone-700 text-stone-300 border border-stone-700/70'
+                              : 'bg-emerald-950/80 hover:bg-emerald-900/80 text-emerald-300 border border-emerald-800/50 hover:border-emerald-500/60'
                           }`}
                         >
-                          {sk.name}
-                        </span>
+                          <span>{sk.name}</span>
+                          <span className="text-[9px] opacity-75">({pageRef})</span>
+                        </button>
                       );
                     })}
                     {fighter.learnedSpellIds.map((spId) => {
                       const sp = rules.skillsAndSpells.find((s) => s.id === spId);
                       if (!sp) return null;
+                      const pageRef = getSkillOrSpellPageReference(sp).replace('Page ', 'p.');
                       return (
-                        <span
+                        <button
                           key={spId}
-                          title={sp.description}
-                          className="px-2 py-0.5 rounded text-[11px] font-medium bg-indigo-950/90 text-indigo-300 border border-indigo-700/50"
+                          type="button"
+                          onClick={() =>
+                            setSelectedSkillOrSpell({
+                              fighterId: fighter.id,
+                              skillOrSpellId: spId,
+                            })
+                          }
+                          title={`${sp.name} (${getSkillOrSpellPageReference(sp)}): ${sp.description}`}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-indigo-950/90 hover:bg-indigo-900/90 text-indigo-300 border border-indigo-700/50 hover:border-indigo-400 transition cursor-pointer"
                         >
-                          ✦ {sp.name}
-                        </span>
+                          <span>✦ {sp.name}</span>
+                          <span className="text-[9px] opacity-75">({pageRef})</span>
+                        </button>
                       );
                     })}
                     {allSkillIds.length === 0 && fighter.learnedSpellIds.length === 0 && (
@@ -3515,6 +3544,26 @@ export const WarbandRosterView: React.FC = () => {
                 targetFighter.conditions.length > 0
               }
               onClose={() => setInspectTarget(null)}
+            />
+          );
+        })()}
+
+      {/* Skill or Spell Reference Modal */}
+      {selectedSkillOrSpell &&
+        (() => {
+          const targetFighter = activeWarband.fighters.find(
+            (f) => f.id === selectedSkillOrSpell.fighterId
+          );
+          if (!targetFighter) return null;
+          return (
+            <SkillOrSpellDetailModal
+              fighter={targetFighter}
+              rules={rules}
+              initialSkillOrSpellId={selectedSkillOrSpell.skillOrSpellId}
+              onClose={() => setSelectedSkillOrSpell(null)}
+              onOpenStatRoller={(f, statKey) =>
+                setInspectTarget({ fighterId: f.id, tab: statKey })
+              }
             />
           );
         })()}

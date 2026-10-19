@@ -6,6 +6,7 @@ import {
   Fighter,
   FighterRole,
   RulesDataset,
+  SkillOrSpellRef,
   StatProfile,
   Warband,
 } from '../types/game';
@@ -168,6 +169,255 @@ export function formatItemDisplayName(
     return `${cleanBaseName} ×${qty}`;
   }
   return cleanBaseName;
+}
+
+const SKILL_OR_SPELL_PAGE_MAP: Record<string, string> = {
+  // Fighting Skills (Pages 124–128)
+  'sk-killing-blow': 'Page 124',
+  'sk-melee-master': 'Page 124',
+  'sk-parry': 'Page 124',
+  'sk-born-in-harness': 'Page 124',
+  'sk-furious-charge': 'Page 124',
+  'sk-witch-slayer': 'Page 126',
+  'sk-close-quarters': 'Page 126',
+  'sk-weaponskill': 'Page 126',
+  'sk-shield-master': 'Page 126',
+  'sk-lance-strike': 'Page 126',
+  'sk-feint': 'Page 127',
+  'sk-dual-wielder': 'Page 127',
+  'sk-zweihander': 'Page 127',
+  'sk-shield-bash': 'Page 127',
+  'sk-focused-strike': 'Page 127',
+  'sk-all-out-attack': 'Page 128',
+  'sk-unarmed-fighter': 'Page 128',
+
+  // Shooting Skills (Pages 129–131)
+  'sk-expert-shot': 'Page 129',
+  'sk-fast-shot': 'Page 129',
+  'sk-lethal-volley': 'Page 129',
+  'sk-eagle-eyes': 'Page 129',
+  'sk-targeteer': 'Page 129',
+  'sk-rock-steady': 'Page 130',
+  'sk-wounding-shot': 'Page 130',
+  'sk-crippling-shot': 'Page 130',
+  'sk-kill-shot': 'Page 130',
+  'sk-spot-the-weak-point': 'Page 130',
+  'sk-pistolier': 'Page 131',
+
+  // Cunning Skills (Pages 131–137)
+  'sk-apothecary': 'Page 131',
+  'sk-bloodhound': 'Page 131',
+  'sk-hedge-magic': 'Pages 131, 133',
+  'sk-fearless': 'Page 133',
+  'sk-ambusher': 'Page 133',
+  'sk-adept-ambusher': 'Page 133',
+  'sk-deadly-ambusher': 'Page 134',
+  'sk-opportunist': 'Page 134',
+  'sk-the-ladys-favour': 'Page 134',
+  'sk-critter-boss': 'Page 135',
+  'sk-witch-smeller': 'Page 135',
+  'sk-lucky': 'Page 135',
+  'sk-resist-magic': 'Page 135',
+  'sk-spell-breaker': 'Page 135',
+  'sk-spell-eater': 'Page 136',
+  'sk-battlemage': 'Page 136',
+  'sk-healing-aura': 'Page 136',
+  'sk-far-reacher': 'Page 136',
+  'sk-aether-sight': 'Page 136',
+  'sk-herbal-brewer': 'Page 137',
+  'sk-brew-master': 'Page 137',
+  'sk-taunt': 'Page 137',
+  'sk-beguile': 'Page 137',
+  'sk-gifted': 'Page 137',
+
+  // Strength Skills (Pages 138–142)
+  'sk-strong-1': 'Page 138',
+  'sk-strong-2': 'Page 138',
+  'sk-strong-3': 'Page 138',
+  'sk-strong-4': 'Page 138',
+  'sk-tough-1': 'Page 138',
+  'sk-tough-2': 'Page 138',
+  'sk-tough-3': 'Page 138',
+  'sk-tough-4': 'Page 138',
+  'sk-tough-5': 'Page 138',
+  'sk-weak-1': 'Page 138',
+  'sk-weak-2': 'Page 138',
+  'sk-weak-3': 'Page 138',
+  'sk-weak-4': 'Page 138',
+  'sk-weak-5': 'Page 138',
+  'sk-weak-6': 'Page 138',
+  'sk-weak-7': 'Page 138',
+  'sk-weak-8': 'Page 138',
+  'sk-delicate-1': 'Page 138',
+  'sk-delicate-2': 'Page 138',
+  'sk-delicate-3': 'Page 138',
+  'sk-delicate-4': 'Page 138',
+  'sk-delicate-5': 'Page 138',
+  'sk-delicate-6': 'Page 138',
+  'sk-delicate-7': 'Page 138',
+  'sk-delicate-8': 'Page 138',
+  'sk-born-survivor': 'Page 138',
+  'sk-beast-of-burden': 'Page 140',
+  'sk-fearsome': 'Page 140',
+  'sk-berserker': 'Page 140',
+  'sk-enduring': 'Page 140',
+  'sk-stunning-blow': 'Page 141',
+  'sk-knockout-blow': 'Page 141',
+  'sk-paladin': 'Page 141',
+  'sk-pushback': 'Page 141',
+  'sk-martial-code': 'Page 142',
+
+  // Movement Skills (Pages 142–143)
+  'sk-dodge': 'Page 142',
+  'sk-light-feet': 'Page 142',
+  'sk-burst-of-speed': 'Page 142',
+  'sk-strider': 'Page 142',
+  'sk-freeze': 'Page 143',
+  'sk-climber': 'Page 143',
+  'sk-leaper': 'Page 143',
+  'sk-slippery': 'Page 143',
+  'sk-swim': 'Page 143',
+
+  // Innate Skills (Pages 144–147)
+  'sk-natural-hunter': 'Page 144',
+  'sk-flight': 'Page 144',
+  'sk-tunneller': 'Page 144',
+  'sk-slow': 'Page 145',
+  'sk-spines': 'Page 145',
+  'sk-short-sighted': 'Page 145',
+  'sk-fighting-mount': 'Page 145',
+  'sk-otherworldly': 'Pages 145–146',
+  'sk-unreliable': 'Page 146',
+  'sk-armless': 'Page 146',
+  'sk-darksense': 'Page 147',
+  'sk-uncanny': 'Page 147',
+  'sk-poisonous': 'Page 147',
+
+  // Magic Spells — Natural (Pages 62–64)
+  'sp-nat-haste': 'Page 63',
+  'sp-nat-curse': 'Page 63',
+  'sp-nat-cure': 'Page 63',
+  'sp-nat-luck': 'Page 63',
+  'sp-nat-lightning': 'Page 64',
+  'sp-nat-push': 'Page 64',
+
+  // Magic Spells — Light (Pages 65–66)
+  'sp-light-bless': 'Page 65',
+  'sp-light-heal': 'Page 65',
+  'sp-light-hearts-of-oak': 'Page 65',
+  'sp-light-purifying-flames': 'Page 66',
+  'sp-light-purge-witch': 'Page 66',
+  'sp-light-invulnerable': 'Page 66',
+
+  // Magic Spells — Dark (Pages 68–70)
+  'sp-dark-pain': 'Page 68',
+  'sp-dark-control': 'Page 68',
+  'sp-dark-paralyse': 'Page 69',
+  'sp-dark-the-horror': 'Page 69',
+  'sp-dark-rage': 'Page 70',
+  'sp-dark-life-eater': 'Page 70',
+
+  // Magic Spells — Wild (Pages 71–72)
+  'sp-wild-stags-leap': 'Page 71',
+  'sp-wild-bears-strength': 'Page 71',
+  'sp-wild-oakflesh': 'Page 71',
+  'sp-wild-earth-shaker': 'Page 72',
+  'sp-wild-tangleweed': 'Page 72',
+  'sp-wild-creeping-things': 'Page 72',
+
+  // Magic Spells — Unbound (Pages 73–76)
+  'sp-unb-cloak-of-concealment': 'Page 73',
+  'sp-unb-acceleration': 'Page 75',
+  'sp-unb-fiery-blast': 'Page 75',
+  'sp-unb-distant-fracturing': 'Page 75',
+  'sp-unb-portable-protector': 'Page 76',
+  'sp-unb-mystical-blade': 'Page 76',
+
+  // Magic Spells — Noble (Pages 77–78)
+  'sp-nob-the-gate': 'Page 77',
+  'sp-nob-transpose': 'Page 77',
+  'sp-nob-channelling': 'Page 77',
+  'sp-nob-dampening': 'Page 78',
+  'sp-nob-radiance': 'Page 78',
+  'sp-nob-revelation': 'Page 78',
+
+  // Magic Spells — Divine (Pages 79–80)
+  'sp-div-circle-of-protection': 'Page 79',
+  'sp-div-healing-hands': 'Page 79',
+  'sp-div-blessing': 'Page 79',
+  'sp-div-holy-zeal': 'Page 80',
+  'sp-div-smite-the-unholy': 'Page 80',
+  'sp-div-light-of-our-lord': 'Page 80',
+
+  // Magic Spells — Channelling (Pages 82–84)
+  'sp-chan-crush': 'Page 82',
+  'sp-chan-regrowth': 'Page 82',
+  'sp-chan-plague': 'Page 83',
+  'sp-chan-the-marsh': 'Page 83',
+  'sp-chan-surge': 'Page 83',
+  'sp-chan-the-mists': 'Page 84',
+
+  // Magic Spells — Fate-weaving (Pages 85–86)
+  'sp-fate-fates-twist': 'Page 85',
+  'sp-fate-fates-path': 'Page 85',
+  'sp-fate-delay': 'Page 85',
+  'sp-fate-evade': 'Page 86',
+  'sp-fate-fates-ebb': 'Page 86',
+  'sp-fate-bright-path': 'Page 86',
+
+  // Magic Spells — Illusionism (Pages 88–90)
+  'sp-ill-lure-of-gold': 'Page 88',
+  'sp-ill-swarms': 'Page 88',
+  'sp-ill-terrify': 'Page 88',
+  'sp-ill-mortal-wound': 'Page 89',
+  'sp-ill-duplicate': 'Page 89',
+  'sp-ill-friend-or-foe': 'Page 89',
+
+  // Magic Spells — Elementalism (Pages 90–92)
+  'sp-elem-firebolt': 'Page 90',
+  'sp-elem-the-burning': 'Page 90',
+  'sp-elem-downpour': 'Page 91',
+  'sp-elem-desiccate': 'Page 91',
+  'sp-elem-wall-of-stone': 'Page 92',
+  'sp-elem-earths-maw': 'Page 92',
+  'sp-elem-storm-call': 'Page 92',
+  'sp-elem-twister': 'Page 92',
+
+  // Magic Spells — Necromancy (Pages 93–97)
+  'sp-necro-danse-macabre': 'Page 93',
+  'sp-necro-leeching-grasp': 'Page 95',
+  'sp-necro-uncontrollable-fear': 'Page 95',
+  'sp-necro-doom-bolt': 'Page 96',
+  'sp-necro-invigorate': 'Page 96',
+  'sp-necro-curse-of-the-centuries': 'Page 97',
+  'sp-necro-drain-thrall': 'Page 97',
+  'sp-necro-raise': 'Page 97',
+};
+
+/**
+ * Returns the official Burrows & Badgers 2nd Edition Rulebook page reference for a Skill or Spell.
+ */
+export function getSkillOrSpellPageReference(entry: SkillOrSpellRef): string {
+  if (entry.pageReference) return entry.pageReference;
+  if (SKILL_OR_SPELL_PAGE_MAP[entry.id]) return SKILL_OR_SPELL_PAGE_MAP[entry.id];
+  switch (entry.category) {
+    case 'Fighting Skill':
+      return 'Pages 124–128';
+    case 'Shooting Skill':
+      return 'Pages 129–131';
+    case 'Cunning Skill':
+      return 'Pages 131–137';
+    case 'Strength Skill':
+      return 'Pages 138–142';
+    case 'Movement Skill':
+      return 'Pages 142–143';
+    case 'Innate Skill':
+      return 'Pages 144–147';
+    case 'Magic Spell':
+      return 'Pages 62–97';
+    default:
+      return 'Pages 123–147';
+  }
 }
 
 /**
