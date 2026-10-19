@@ -1,4 +1,6 @@
 import {
+  AllegianceRef,
+  AllegianceStartingEquipmentOption,
   DiceValue,
   EquipmentRef,
   EquipmentSlot,
@@ -7,6 +9,7 @@ import {
   FighterRole,
   RulesDataset,
   SkillOrSpellRef,
+  SpeciesRef,
   StatProfile,
   Warband,
 } from '../types/game';
@@ -2786,4 +2789,244 @@ export function computeFighterCombatBreakdown(
     woundPenaltyIgnoredBy,
   };
 }
+
+/**
+ * Official Burrows & Badgers 2nd Edition Allegiance Starting Rare Equipment Options & Prices (Rulebook Pages 47–61).
+ * Any Rare Equipment NOT listed in an Allegiance's table cannot be purchased at Band creation
+ * (unless the user enables the custom override), and when listed, uses the exact Allegiance price.
+ */
+export const ALLEGIANCE_STARTING_RARE_EQUIPMENT: Record<
+  string,
+  AllegianceStartingEquipmentOption[]
+> = {
+  'al-royalists': [
+    { equipmentId: 'eq-master-smithed-upgrade', cost: 12, note: '12p + cost of weapon' },
+    { equipmentId: 'eq-war-bow', cost: 20 },
+    { equipmentId: 'eq-heavy-crossbow', cost: 27 },
+    { equipmentId: 'eq-caliver', cost: 20 },
+    { equipmentId: 'eq-very-heavy-armour', cost: 40 },
+    { equipmentId: 'eq-silk-undershirt', cost: 5 },
+    { equipmentId: 'eq-telescope', cost: 10 },
+    { equipmentId: 'eq-relic', cost: 4 },
+    { equipmentId: 'eq-antidote', cost: 3 },
+  ],
+  'al-rogues': [
+    { equipmentId: 'eq-caliver', cost: 25 },
+    { equipmentId: 'eq-silk-undershirt', cost: 5 },
+    { equipmentId: 'eq-dispel-scroll', cost: 10 },
+    { equipmentId: 'eq-blind-dust', cost: 7 },
+    { equipmentId: 'eq-telescope', cost: 10 },
+    { equipmentId: 'eq-paralysing-poison', cost: 4 },
+    { equipmentId: 'eq-pain-poison', cost: 2 },
+    { equipmentId: 'eq-mortal-poison', cost: 5 },
+    { equipmentId: 'eq-antidote', cost: 3 },
+  ],
+  'al-freebeasts': [
+    { equipmentId: 'eq-heavy-crossbow', cost: 25, note: 'Reduced starting cost (25p)' },
+    { equipmentId: 'eq-caliver', cost: 20 },
+    { equipmentId: 'eq-very-heavy-armour', cost: 42 },
+    { equipmentId: 'eq-silk-undershirt', cost: 5 },
+    { equipmentId: 'eq-dispel-scroll', cost: 10 },
+    { equipmentId: 'eq-shielding-talisman', cost: 7 },
+    { equipmentId: 'eq-mirroring-talisman', cost: 10 },
+    { equipmentId: 'eq-blind-dust', cost: 7 },
+    { equipmentId: 'eq-telescope', cost: 10 },
+    { equipmentId: 'eq-paralysing-poison', cost: 4 },
+    { equipmentId: 'eq-pain-poison', cost: 2 },
+    { equipmentId: 'eq-mortal-poison', cost: 5 },
+    { equipmentId: 'eq-relic', cost: 4 },
+    { equipmentId: 'eq-antidote', cost: 3 },
+    { equipmentId: 'eq-grimoire', cost: 20 },
+  ],
+  'al-kindred': [
+    { equipmentId: 'eq-master-smithed-upgrade', cost: 12, note: '12p + cost of weapon' },
+    { equipmentId: 'eq-war-bow', cost: 20 },
+    { equipmentId: 'eq-silk-undershirt', cost: 5 },
+    { equipmentId: 'eq-telescope', cost: 10 },
+    { equipmentId: 'eq-relic', cost: 4 },
+    { equipmentId: 'eq-antidote', cost: 3 },
+  ],
+  'al-witch-hunters': [
+    { equipmentId: 'eq-malleus-maleficarum', cost: 10, note: '10p + cost of weapon' },
+    { equipmentId: 'eq-heavy-crossbow', cost: 28 },
+    { equipmentId: 'eq-caliver', cost: 22 },
+    { equipmentId: 'eq-very-heavy-armour', cost: 40 },
+    { equipmentId: 'eq-silk-undershirt', cost: 5 },
+    { equipmentId: 'eq-dispel-scroll', cost: 8, note: 'Reduced starting cost (8p)' },
+    { equipmentId: 'eq-shielding-talisman', cost: 7 },
+    { equipmentId: 'eq-mirroring-talisman', cost: 10 },
+    { equipmentId: 'eq-telescope', cost: 10 },
+    { equipmentId: 'eq-relic', cost: 4 },
+    { equipmentId: 'eq-critter-bonded-grub', cost: 25 },
+  ],
+  'al-wildlings': [
+    { equipmentId: 'eq-very-heavy-armour', cost: 45 },
+    { equipmentId: 'eq-dispel-scroll', cost: 10 },
+    { equipmentId: 'eq-shielding-talisman', cost: 7 },
+    { equipmentId: 'eq-mirroring-talisman', cost: 10 },
+    { equipmentId: 'eq-blind-dust', cost: 7 },
+    { equipmentId: 'eq-berserker-seeds', cost: 8 },
+    { equipmentId: 'eq-old-one-brews', cost: 13 },
+    { equipmentId: 'eq-paralysing-poison', cost: 4 },
+    { equipmentId: 'eq-pain-poison', cost: 2 },
+    { equipmentId: 'eq-mortal-poison', cost: 5 },
+    { equipmentId: 'eq-relic', cost: 4 },
+    { equipmentId: 'eq-antidote', cost: 3 },
+    { equipmentId: 'eq-critter-hornet', cost: 32 },
+    { equipmentId: 'eq-critter-centipede', cost: 23 },
+    { equipmentId: 'eq-critter-spider', cost: 20 },
+    { equipmentId: 'eq-critter-beetle', cost: 23 },
+    { equipmentId: 'eq-critter-bonded-grub', cost: 23, note: 'Reduced starting cost (23p)' },
+  ],
+  'al-arcane-conclave': [
+    { equipmentId: 'eq-dispel-scroll', cost: 10 },
+    { equipmentId: 'eq-shielding-talisman', cost: 10 },
+    { equipmentId: 'eq-mirroring-talisman', cost: 13 },
+    { equipmentId: 'eq-grimoire', cost: 17, note: 'Reduced starting cost (17p)' },
+  ],
+  'al-undead': [
+    { equipmentId: 'eq-dispel-scroll', cost: 10 },
+    { equipmentId: 'eq-shielding-talisman', cost: 10 },
+    { equipmentId: 'eq-mirroring-talisman', cost: 13 },
+    { equipmentId: 'eq-grimoire', cost: 20 },
+  ],
+  'al-routiers': [
+    { equipmentId: 'eq-war-bow', cost: 20 },
+    { equipmentId: 'eq-heavy-crossbow', cost: 27 },
+    { equipmentId: 'eq-caliver', cost: 20 },
+    { equipmentId: 'eq-very-heavy-armour', cost: 40 },
+    { equipmentId: 'eq-relic', cost: 5 },
+  ],
+  'al-hillfolk': [
+    { equipmentId: 'eq-bagpipes', cost: 20, note: 'Max 1 Piper per Band' },
+    { equipmentId: 'eq-critter-hornet', cost: 30, note: 'Reduced starting cost (30p)' },
+    { equipmentId: 'eq-critter-centipede', cost: 23 },
+    { equipmentId: 'eq-critter-spider', cost: 20 },
+    { equipmentId: 'eq-critter-beetle', cost: 23 },
+    { equipmentId: 'eq-critter-bonded-grub', cost: 23, note: 'Reduced starting cost (23p)' },
+  ],
+};
+
+/**
+ * Official Stag Beetle Grub Species recruitment price discounts for Witch Hunters (p. 54),
+ * Wildlings (p. 55), and Hillfolk (p. 61).
+ */
+export const ALLEGIANCE_SPECIES_COST_OVERRIDES: Record<string, Record<string, number>> = {
+  'al-witch-hunters': {
+    'sp-tracker-grub': 23, // Base: 27p
+    'sp-attack-grub': 26,  // Base: 28p
+    'sp-damping-grub': 24, // Base: 25p
+  },
+  'al-wildlings': {
+    'sp-tracker-grub': 20, // Base: 27p
+    'sp-attack-grub': 23,  // Base: 28p
+    'sp-damping-grub': 21, // Base: 25p
+  },
+  'al-hillfolk': {
+    'sp-tracker-grub': 21, // Base: 27p
+    'sp-attack-grub': 24,  // Base: 28p
+    'sp-damping-grub': 22, // Base: 25p
+  },
+};
+
+export function getAllegianceStartingRareEquipment(
+  allegiance: AllegianceRef | undefined
+): AllegianceStartingEquipmentOption[] {
+  if (!allegiance) return [];
+  if (allegiance.startingRareEquipment && allegiance.startingRareEquipment.length > 0) {
+    return allegiance.startingRareEquipment;
+  }
+  return ALLEGIANCE_STARTING_RARE_EQUIPMENT[allegiance.id] ?? [];
+}
+
+export function getAllegianceEquipmentOption(
+  allegiance: AllegianceRef | undefined,
+  equipmentId: string
+): AllegianceStartingEquipmentOption | undefined {
+  const options = getAllegianceStartingRareEquipment(allegiance);
+  return options.find((o) => o.equipmentId === equipmentId);
+}
+
+/**
+ * Returns the effective Penny cost and metadata for an Equipment item given the Warband's Allegiance.
+ */
+export function getEquipmentCostForAllegiance(
+  eq: EquipmentRef,
+  allegiance: AllegianceRef | undefined
+): {
+  cost: number;
+  baseCost: number;
+  isCommon: boolean;
+  isAllegianceRare: boolean;
+  isAvailableAtCreation: boolean;
+  priceDiff: number;
+  note?: string;
+} {
+  const isCommon = eq.rarity === 'Common';
+  const allegianceOpt = getAllegianceEquipmentOption(allegiance, eq.id);
+  const isAllegianceRare = Boolean(allegianceOpt);
+
+  // Also check if Allegiance special rules forbid this Common item (Kindred Travel Light, Wildlings Stay Pure)
+  let forbiddenByAllegiance = false;
+  if (allegiance?.id === 'al-kindred') {
+    if (
+      eq.id === 'eq-heavy-armour' ||
+      eq.id === 'eq-very-heavy-armour' ||
+      eq.id === 'eq-heavy-shield' ||
+      eq.id === 'eq-heavy-crossbow' ||
+      eq.isBlackPowder
+    ) {
+      forbiddenByAllegiance = true;
+    }
+  } else if (allegiance?.id === 'al-wildlings' && eq.isBlackPowder) {
+    forbiddenByAllegiance = true;
+  }
+
+  const effectiveCost = allegianceOpt ? allegianceOpt.cost : eq.cost;
+  const isAvailableAtCreation = (isCommon || isAllegianceRare) && !forbiddenByAllegiance;
+
+  return {
+    cost: effectiveCost,
+    baseCost: eq.cost,
+    isCommon,
+    isAllegianceRare,
+    isAvailableAtCreation,
+    priceDiff: effectiveCost - eq.cost,
+    note: allegianceOpt?.note,
+  };
+}
+
+/**
+ * Returns the effective Signing-on Fee for a Species in a given Allegiance
+ * (accounting for Stag Beetle Grub discounts for Witch Hunters, Wildlings, and Hillfolk).
+ */
+export function getSpeciesRecruitCostForAllegiance(
+  species: SpeciesRef | undefined,
+  allegiance: AllegianceRef | undefined
+): {
+  cost: number;
+  baseCost: number;
+  isDiscounted: boolean;
+} {
+  if (!species) {
+    return { cost: 30, baseCost: 30, isDiscounted: false };
+  }
+  const overrides =
+    allegiance?.startingSpeciesCostOverrides ??
+    (allegiance ? ALLEGIANCE_SPECIES_COST_OVERRIDES[allegiance.id] : undefined);
+  const overrideCost = overrides?.[species.id];
+  if (overrideCost !== undefined) {
+    return {
+      cost: overrideCost,
+      baseCost: species.cost,
+      isDiscounted: overrideCost < species.cost,
+    };
+  }
+  return {
+    cost: species.cost,
+    baseCost: species.cost,
+    isDiscounted: false,
+  };
+}
+
 

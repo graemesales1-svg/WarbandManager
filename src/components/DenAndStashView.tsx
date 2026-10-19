@@ -6,6 +6,8 @@ import {
 } from '../types/game';
 import {
   formatItemDisplayName,
+  getAllegianceStartingRareEquipment,
+  getEquipmentCostForAllegiance,
   getItemQuantity,
   isEquipmentStackable,
   validateEquipmentForFighter,
@@ -49,6 +51,13 @@ export const DenAndStashView: React.FC = () => {
   const [pennyReason, setPennyReason] = useState('Post-Battle Spoils & Foraging');
 
   if (!activeWarband) return null;
+
+  const allegiance = rules.allegiances.find((a) => a.id === activeWarband.allegianceId);
+  const allegianceRareOptions = getAllegianceStartingRareEquipment(allegiance);
+  const allegianceRareIds = new Set(allegianceRareOptions.map((o) => o.equipmentId));
+  const allegianceRareEquipmentList = allegianceRareOptions
+    .map((o) => rules.equipment.find((e) => e.id === o.equipmentId))
+    .filter((e): e is NonNullable<typeof e> => Boolean(e));
 
   const stashedItems = activeWarband.inventory.filter((i) => i.assignedFighterId === null);
   const ownedUpgradeIds = new Set(activeWarband.denUpgrades.map((d) => d.upgradeId));
@@ -126,7 +135,8 @@ export const DenAndStashView: React.FC = () => {
 
     const stackable = isEquipmentStackable(eq);
     const qty = stackable ? Math.max(1, Math.min(99, stashQuantity || 1)) : 1;
-    const totalValueCost = eq.cost * qty;
+    const unitCost = getEquipmentCostForAllegiance(eq, allegiance).cost;
+    const totalValueCost = unitCost * qty;
     const cost = stashFree ? 0 : totalValueCost;
     if (cost > activeWarband.treasuryPennies) {
       alert(`Insufficient Pennies (${activeWarband.treasuryPennies}p in Treasury).`);
@@ -540,20 +550,54 @@ export const DenAndStashView: React.FC = () => {
               }}
               className="w-full bg-stone-900 border border-stone-700 rounded-lg px-3 py-1.5 text-xs"
             >
-              {sortedEquipment.map((eq) => (
-                <option key={eq.id} value={eq.id}>
-                  {eq.name} — {eq.cost}p ({eq.category} / {eq.rarity})
-                </option>
-              ))}
+              {allegianceRareEquipmentList.length > 0 && (
+                <optgroup
+                  label={`★ ${allegiance?.name || 'Allegiance'} Starting Rare Equipment`}
+                >
+                  {allegianceRareEquipmentList.map((eq) => {
+                    const priceInfo = getEquipmentCostForAllegiance(eq, allegiance);
+                    return (
+                      <option key={`stash-alg-${eq.id}`} value={eq.id}>
+                        ★ {eq.name} — {priceInfo.cost}p ({eq.category} / {allegiance?.name} Rare)
+                      </option>
+                    );
+                  })}
+                </optgroup>
+              )}
+              <optgroup label="Common Equipment (General Store)">
+                {sortedEquipment
+                  .filter((eq) => eq.rarity === 'Common')
+                  .map((eq) => {
+                    const priceInfo = getEquipmentCostForAllegiance(eq, allegiance);
+                    return (
+                      <option key={eq.id} value={eq.id}>
+                        {eq.name} — {priceInfo.cost}p ({eq.category} / Common)
+                      </option>
+                    );
+                  })}
+              </optgroup>
+              <optgroup label="Campaign Rare & Relic Equipment">
+                {sortedEquipment
+                  .filter((eq) => eq.rarity !== 'Common' && !allegianceRareIds.has(eq.id))
+                  .map((eq) => {
+                    const priceInfo = getEquipmentCostForAllegiance(eq, allegiance);
+                    return (
+                      <option key={eq.id} value={eq.id}>
+                        {eq.name} — {priceInfo.cost}p ({eq.category} / {eq.rarity})
+                      </option>
+                    );
+                  })}
+              </optgroup>
             </select>
             {(() => {
               const selectedStashEq = rules.equipment.find((e) => e.id === stashEqId);
               if (!selectedStashEq || !isEquipmentStackable(selectedStashEq)) return null;
+              const unitCost = getEquipmentCostForAllegiance(selectedStashEq, allegiance).cost;
               return (
                 <div className="flex flex-wrap items-center justify-between gap-2 bg-emerald-950/30 border border-emerald-800/50 rounded-lg px-3 py-2 text-xs">
                   <span className="text-emerald-300 font-semibold">
                     Stackable Consumable (Total:{' '}
-                    {stashFree ? 0 : selectedStashEq.cost * stashQuantity}p)
+                    {stashFree ? 0 : unitCost * stashQuantity}p)
                   </span>
                   <div className="flex items-center gap-1.5">
                     <span className="text-stone-400">Qty:</span>

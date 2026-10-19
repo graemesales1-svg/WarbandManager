@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import {
   DiceValue,
+  EquipmentRef,
   EquipmentSlot,
   EquippedOrStashedItem,
   Fighter,
@@ -20,12 +21,15 @@ import {
   findAvailableSlotForEquipment,
   formatItemDisplayName,
   formatSigned,
+  getAllegianceStartingRareEquipment,
   getEarnedAdvancesCount,
   getEffectiveSlotsRequired,
+  getEquipmentCostForAllegiance,
   getFighterFatePoints,
   getFighterSlotOccupancy,
   getItemQuantity,
   getNextXpThreshold,
+  getSpeciesRecruitCostForAllegiance,
   getStartingFatePointsForRole,
   getSkillOrSpellPageReference,
   getValidSlotsForEquipment,
@@ -279,6 +283,18 @@ export const WarbandRosterView: React.FC = () => {
     useState<MagicalArchetype>('Natural');
   const [selectedSpellIds, setSelectedSpellIds] = useState<string[]>([]);
 
+  // Recruit Starting Equipment State
+  const [recruitItems, setRecruitItems] = useState<EquippedOrStashedItem[]>([]);
+  const [recruitGearFilter, setRecruitGearFilter] = useState<
+    'all' | 'allegiance_rare' | 'weapons_armour' | 'items_ammo' | 'ingredients'
+  >('all');
+  const [recruitEqId, setRecruitEqId] = useState<string>('eq-one-handed');
+  const [recruitEqSlot, setRecruitEqSlot] = useState<EquipmentSlot>('Weapon 1');
+  const [recruitEqQuantity, setRecruitEqQuantity] = useState<number>(1);
+  const [recruitEqCustomName, setRecruitEqCustomName] = useState<string>('');
+  const [overrideRecruitGearRestrictions, setOverrideRecruitGearRestrictions] =
+    useState<boolean>(false);
+
   // Advance / Injury Modal State
   const [advStatKey, setAdvStatKey] = useState<keyof StatNumericModifiers>('strike');
   const [advSkillId, setAdvSkillId] = useState('sk-parry');
@@ -360,7 +376,79 @@ export const WarbandRosterView: React.FC = () => {
   const warbandRating = calculateWarbandRating(activeWarband, rules);
   const stashedItems = activeWarband.inventory.filter((i) => i.assignedFighterId === null);
 
-  const totalRecruitCost = selectedSpecies?.cost ?? 30;
+  const allegianceRareOptions = getAllegianceStartingRareEquipment(allegiance);
+  const allegianceRareIds = new Set(allegianceRareOptions.map((o) => o.equipmentId));
+  const allegianceRareEquipmentList = allegianceRareOptions
+    .map((o) => rules.equipment.find((e) => e.id === o.equipmentId))
+    .filter((e): e is NonNullable<typeof e> => Boolean(e));
+
+  // Species recruitment cost (accounts for Stag Beetle Grub discounts for Witch Hunters, Wildlings, Hillfolk)
+  const speciesCostInfo = getSpeciesRecruitCostForAllegiance(selectedSpecies, allegiance);
+  const baseSpeciesRecruitCost = speciesCostInfo.cost;
+  const recruitGearTotalCost = recruitItems.reduce((sum, i) => sum + i.purchaseCost, 0);
+  const totalRecruitCost = baseSpeciesRecruitCost + recruitGearTotalCost;
+
+  // Build a live preview Fighter & Warband so equipment validation (Strong requirements, Magic-user requirements, slots) works dynamically inside the Recruit modal
+  const previewEffectiveIsMagicUser =
+    isMagicUser || (allegianceRequiresMagicUser && !overrideMagicRestrictions);
+  const previewLearnedSkills: string[] = [];
+  if (fRole === 'Leader' && leaderSkillId) {
+    previewLearnedSkills.push(leaderSkillId);
+  } else if (fRole === 'Second' && secondSkillId) {
+    previewLearnedSkills.push(secondSkillId);
+  }
+  if (
+    applyAllegianceBonus &&
+    canUseMoreAllegianceBonuses &&
+    startingBonusRule?.type === 'skill' &&
+    allegianceSkillId
+  ) {
+    previewLearnedSkills.push(allegianceSkillId);
+  }
+  if (previewEffectiveIsMagicUser && selectedSpellIds.length > 0) {
+    const tier = Math.min(8, selectedSpellIds.length);
+    previewLearnedSkills.push(`sk-weak-${tier}`, `sk-delicate-${tier}`);
+  }
+
+  const previewRecruitFighter: Fighter = {
+    id: 'RECRUIT_PREVIEW',
+    name: fName.trim() || selectedSpecies?.name || 'New Recruit',
+    role: fRole,
+    speciesId: selectedSpecies?.id || fSpeciesId,
+    status: 'Active',
+    recruitmentCost: baseSpeciesRecruitCost,
+    xp: 0,
+    advancesCount: 0,
+    isMagicUser: previewEffectiveIsMagicUser,
+    magicalArchetype: previewEffectiveIsMagicUser ? selectedMagicArchetype : undefined,
+    magicalArchetypes: previewEffectiveIsMagicUser ? [selectedMagicArchetype] : [],
+    statModifiers: {
+      move: 0,
+      strike: 0,
+      block: 0,
+      ranged: 0,
+      nimbleness: 0,
+      concealment: 0,
+      awareness: 0,
+      fortitude: 0,
+      presence: 0,
+      wounds: 0,
+    },
+    learnedSkillIds: previewLearnedSkills,
+    learnedSpellIds: previewEffectiveIsMagicUser ? selectedSpellIds : [],
+    injuryIds: [],
+    advanceHistory: [],
+    notes: '',
+    currentWounds: selectedSpecies?.stats.wounds || 17,
+    fatePoints: getStartingFatePointsForRole(fRole),
+    conditions: [],
+  };
+
+  const previewRecruitWarband = {
+    ...activeWarband,
+    fighters: [...activeWarband.fighters, previewRecruitFighter],
+    inventory: [...activeWarband.inventory, ...recruitItems],
+  };
 
   const openRecruitModal = () => {
     const defaultRole: FighterRole = !hasActiveLeader
@@ -372,6 +460,13 @@ export const WarbandRosterView: React.FC = () => {
     setApplyAllegianceBonus(false);
     setOverrideRecruitSkillPrereqs(false);
     setOverrideMagicRestrictions(false);
+    setRecruitItems([]);
+    setRecruitGearFilter('all');
+    setRecruitEqId('eq-one-handed');
+    setRecruitEqSlot('Weapon 1');
+    setRecruitEqQuantity(1);
+    setRecruitEqCustomName('');
+    setOverrideRecruitGearRestrictions(false);
 
     const defaultArchetype: MagicalArchetype =
       allowedArchetypesForAllegiance[0] || 'Natural';
@@ -393,6 +488,114 @@ export const WarbandRosterView: React.FC = () => {
       setAllegianceSkillId(startingBonusRule.allowedSkillIds[0]);
     }
     setShowRecruitModal(true);
+  };
+
+  const handleAddRecruitGear = (eqToAdd?: EquipmentRef, customQty?: number) => {
+    const eq = eqToAdd || rules.equipment.find((x) => x.id === recruitEqId);
+    if (!eq) return;
+
+    const costMeta = getEquipmentCostForAllegiance(eq, allegiance);
+    if (!overrideRecruitGearRestrictions && !costMeta.isAvailableAtCreation) {
+      alert(
+        `${eq.name} is not available at character creation for ${
+          allegiance?.name || 'this warband'
+        }. Check "Override equipment & rarity restrictions" to add it anyway.`
+      );
+      return;
+    }
+
+    const stackable = isEquipmentStackable(eq);
+    const qty = stackable
+      ? Math.max(1, Math.min(99, customQty ?? recruitEqQuantity ?? 1))
+      : 1;
+
+    const validation = validateEquipmentForFighter(
+      eq,
+      previewRecruitFighter,
+      previewRecruitWarband,
+      rules,
+      eqToAdd ? undefined : recruitEqSlot
+    );
+
+    if (!overrideRecruitGearRestrictions && !validation.valid) {
+      alert(
+        `Cannot equip ${eq.name} on ${previewRecruitFighter.name}: ${validation.reason}\n\nCheck "Override equipment & rarity restrictions" if you wish to equip this anyway.`
+      );
+      return;
+    }
+
+    const unitCost = costMeta.cost;
+    const totalItemCost = unitCost * qty;
+    const assignedSlot: EquipmentSlot =
+      !overrideRecruitGearRestrictions && validation.suggestedSlot
+        ? validation.suggestedSlot
+        : eqToAdd
+        ? validation.suggestedSlot || eq.defaultSlot
+        : recruitEqSlot;
+
+    const existingStack = stackable
+      ? recruitItems.find((i) => i.equipmentId === eq.id && !i.isConsumed)
+      : undefined;
+
+    if (existingStack) {
+      const nextQty = getItemQuantity(existingStack) + qty;
+      setRecruitItems((prev) =>
+        prev.map((i) =>
+          i.instanceId === existingStack.instanceId
+            ? {
+                ...i,
+                quantity: nextQty,
+                purchaseCost: i.purchaseCost + totalItemCost,
+                customName:
+                  (!eqToAdd && recruitEqCustomName.trim()) || i.customName,
+              }
+            : i
+        )
+      );
+    } else {
+      const newItem: EquippedOrStashedItem = {
+        instanceId: crypto.randomUUID(),
+        equipmentId: eq.id,
+        assignedFighterId: 'RECRUIT_PREVIEW',
+        slot: assignedSlot,
+        purchaseCost: totalItemCost,
+        quantity: stackable ? qty : undefined,
+        customName: !eqToAdd ? recruitEqCustomName.trim() || undefined : undefined,
+      };
+      setRecruitItems((prev) => [...prev, newItem]);
+    }
+
+    if (!eqToAdd) {
+      setRecruitEqCustomName('');
+      setRecruitEqQuantity(1);
+    }
+  };
+
+  const handleAdjustRecruitGearQuantity = (instanceId: string, delta: number) => {
+    setRecruitItems((prev) => {
+      const target = prev.find((i) => i.instanceId === instanceId);
+      if (!target) return prev;
+      const eq = rules.equipment.find((e) => e.id === target.equipmentId);
+      const unitCost = eq ? getEquipmentCostForAllegiance(eq, allegiance).cost : 1;
+      const currentQty = getItemQuantity(target);
+      const nextQty = currentQty + delta;
+      if (nextQty <= 0) {
+        return prev.filter((i) => i.instanceId !== instanceId);
+      }
+      return prev.map((i) =>
+        i.instanceId === instanceId
+          ? {
+              ...i,
+              quantity: nextQty,
+              purchaseCost: Math.max(0, i.purchaseCost + unitCost * delta),
+            }
+          : i
+      );
+    });
+  };
+
+  const handleRemoveRecruitGear = (instanceId: string) => {
+    setRecruitItems((prev) => prev.filter((i) => i.instanceId !== instanceId));
   };
 
   const handleToggleSpell = (spellId: string) => {
@@ -457,7 +660,7 @@ export const WarbandRosterView: React.FC = () => {
 
     if (deductPennies && activeWarband.treasuryPennies < totalRecruitCost) {
       alert(
-        `Not enough Pennies in the Treasury (${activeWarband.treasuryPennies}p available, ${totalRecruitCost}p required). Uncheck "Deduct from Treasury" if recruiting for free.`
+        `Not enough Pennies in the Treasury (${activeWarband.treasuryPennies}p available, ${totalRecruitCost}p required for Signing-on Fee + Starting Gear). Uncheck "Deduct from Treasury" if recruiting for free.`
       );
       return;
     }
@@ -622,15 +825,16 @@ export const WarbandRosterView: React.FC = () => {
 
     const roleStartingAdvances = fRole === 'Leader' ? 2 : fRole === 'Second' ? 1 : 0;
     const startingAdvances = roleStartingAdvances + (willApplyAllegiance ? 1 : 0);
+    const newFighterId = crypto.randomUUID();
 
     const newFighter: Fighter = {
-      id: crypto.randomUUID(),
+      id: newFighterId,
       name: fName.trim(),
       title: fTitle.trim() || undefined,
       role: fRole,
       speciesId: selectedSpecies.id,
       status: 'Active',
-      recruitmentCost: totalRecruitCost,
+      recruitmentCost: baseSpeciesRecruitCost,
       xp: 0,
       advancesCount: startingAdvances,
       usedAllegianceBonus: willApplyAllegiance,
@@ -648,6 +852,21 @@ export const WarbandRosterView: React.FC = () => {
       conditions: [],
     };
 
+    const assignedRecruitItems: EquippedOrStashedItem[] = recruitItems.map((item) => ({
+      ...item,
+      assignedFighterId: newFighterId,
+    }));
+
+    const gearSummary =
+      assignedRecruitItems.length > 0
+        ? ` + Starting Gear (${assignedRecruitItems
+            .map((i) => {
+              const eq = rules.equipment.find((e) => e.id === i.equipmentId);
+              return formatItemDisplayName(i, eq);
+            })
+            .join(', ')} — ${recruitGearTotalCost}p)`
+        : '';
+
     const newBalance = deductPennies
       ? activeWarband.treasuryPennies - totalRecruitCost
       : activeWarband.treasuryPennies;
@@ -656,13 +875,14 @@ export const WarbandRosterView: React.FC = () => {
       ...activeWarband,
       treasuryPennies: newBalance,
       fighters: [...activeWarband.fighters, newFighter],
+      inventory: [...activeWarband.inventory, ...assignedRecruitItems],
       treasuryLog: deductPennies
         ? [
             {
               id: crypto.randomUUID(),
               date: today,
               deltaPennies: -totalRecruitCost,
-              reason: `Recruited ${newFighter.name} (${selectedSpecies.name} ${newFighter.role})`,
+              reason: `Recruited ${newFighter.name} (${selectedSpecies.name} ${newFighter.role}, ${baseSpeciesRecruitCost}p)${gearSummary}`,
               balanceAfter: newBalance,
             },
             ...activeWarband.treasuryLog,
@@ -676,6 +896,7 @@ export const WarbandRosterView: React.FC = () => {
     setApplyAllegianceBonus(false);
     setIsMagicUser(false);
     setSelectedSpellIds([]);
+    setRecruitItems([]);
     setShowRecruitModal(false);
   };
 
@@ -749,7 +970,8 @@ export const WarbandRosterView: React.FC = () => {
       return;
     }
 
-    const totalValueCost = eq.cost * qty;
+    const unitCost = getEquipmentCostForAllegiance(eq, allegiance).cost;
+    const totalValueCost = unitCost * qty;
     const treasuryCost = freeGrant ? 0 : totalValueCost;
     if (treasuryCost > activeWarband.treasuryPennies) {
       alert(
@@ -841,7 +1063,7 @@ export const WarbandRosterView: React.FC = () => {
       return;
     }
 
-    const unitCost = eq.cost;
+    const unitCost = getEquipmentCostForAllegiance(eq, allegiance).cost;
     const treasuryCost = delta > 0 && deductFromTreasury ? unitCost * delta : 0;
     if (treasuryCost > activeWarband.treasuryPennies) {
       alert(
@@ -1914,11 +2136,20 @@ export const WarbandRosterView: React.FC = () => {
       {/* RECRUIT FIGHTER MODAL */}
       {showRecruitModal && (
         <div className="fixed inset-0 z-50 bg-black/80 flex items-start sm:items-center justify-center p-3 sm:p-4 overflow-y-auto">
-          <div className="bg-stone-900 border border-stone-700 rounded-2xl max-w-xl w-full p-5 sm:p-6 space-y-4 my-auto max-h-[92vh] overflow-y-auto">
+          <div className="bg-stone-900 border border-stone-700 rounded-2xl max-w-2xl w-full p-5 sm:p-6 space-y-4 my-auto max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-stone-800 pb-3">
-              <h3 className="text-lg font-bold text-amber-400 font-serif">
-                Recruit a Beast to {activeWarband.name}
-              </h3>
+              <div>
+                <h3 className="text-lg font-bold text-amber-400 font-serif">
+                  Recruit a Beast to {activeWarband.name}
+                </h3>
+                <p className="text-xs text-stone-400">
+                  {allegiance?.name || 'Warband'} • Treasury:{' '}
+                  <strong className="text-amber-300">
+                    {activeWarband.treasuryPennies} Pennies
+                  </strong>{' '}
+                  available
+                </p>
+              </div>
               <button
                 onClick={() => setShowRecruitModal(false)}
                 className="text-stone-400 hover:text-stone-100 cursor-pointer"
@@ -2005,18 +2236,25 @@ export const WarbandRosterView: React.FC = () => {
                     }}
                     className="w-full bg-stone-950 border border-stone-700 rounded-lg px-3 py-2 text-sm"
                   >
-                    {sortedSpecies.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name} ({s.size} — {s.cost}p)
-                      </option>
-                    ))}
+                    {sortedSpecies.map((s) => {
+                      const spCost = getSpeciesRecruitCostForAllegiance(s, allegiance);
+                      return (
+                        <option key={s.id} value={s.id}>
+                          {s.name} ({s.size} — {spCost.cost}p
+                          {spCost.isDiscounted
+                            ? ` ★ ${allegiance?.name} discount from ${spCost.baseCost}p`
+                            : ''}
+                          )
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
               </div>
 
               {selectedSpecies && (
                 <div className="bg-stone-950 border border-stone-800 rounded-xl p-3 text-xs space-y-1">
-                  <div className="flex justify-between font-semibold text-stone-200">
+                  <div className="flex flex-wrap justify-between font-semibold text-stone-200 gap-1">
                     <span>
                       {selectedSpecies.name} ({selectedSpecies.size} • Base Level{' '}
                       {selectedSpecies.baseLevel || 1} → Starting Level{' '}
@@ -2026,7 +2264,12 @@ export const WarbandRosterView: React.FC = () => {
                       )
                     </span>
                     <span className="text-amber-400">
-                      Signing-on Fee: {totalRecruitCost} Pennies
+                      Signing-on Fee: {baseSpeciesRecruitCost} Pennies
+                      {speciesCostInfo.isDiscounted && (
+                        <span className="text-emerald-400 ml-1">
+                          (Discounted from {speciesCostInfo.baseCost}p for {allegiance?.name})
+                        </span>
+                      )}
                     </span>
                   </div>
                   <div className="text-stone-400 font-mono text-[11px]">
@@ -2540,6 +2783,719 @@ export const WarbandRosterView: React.FC = () => {
                 </div>
               )}
 
+              {/* STARTING EQUIPMENT & ALLEGIANCE RARE GEAR BUILDER */}
+              {selectedSpecies &&
+                (() => {
+                  const previewSlotOcc = getFighterSlotOccupancy(
+                    previewRecruitFighter,
+                    previewRecruitWarband.inventory,
+                    rules
+                  );
+                  const allegianceRareOpts = getAllegianceStartingRareEquipment(allegiance);
+                  const allegianceRareEquipmentList = allegianceRareOpts
+                    .map((opt) => {
+                      const eq = rules.equipment.find((e) => e.id === opt.equipmentId);
+                      return eq ? { eq, opt } : null;
+                    })
+                    .filter(
+                      (x): x is { eq: EquipmentRef; opt: (typeof allegianceRareOpts)[0] } =>
+                        Boolean(x)
+                    );
+
+                  const commonWeaponsArmour = sortedEquipment.filter((eq) => {
+                    const meta = getEquipmentCostForAllegiance(eq, allegiance);
+                    return (
+                      meta.isCommon &&
+                      (overrideRecruitGearRestrictions || meta.isAvailableAtCreation) &&
+                      (eq.equipmentType === 'Weapon' || eq.equipmentType === 'Armour')
+                    );
+                  });
+
+                  const commonItemsAmmo = sortedEquipment.filter((eq) => {
+                    const meta = getEquipmentCostForAllegiance(eq, allegiance);
+                    return (
+                      meta.isCommon &&
+                      (overrideRecruitGearRestrictions || meta.isAvailableAtCreation) &&
+                      eq.equipmentType === 'Item'
+                    );
+                  });
+
+                  const commonIngredients = sortedEquipment.filter(
+                    (eq) => eq.equipmentType === 'Ingredient'
+                  );
+
+                  const otherRareRelics = sortedEquipment.filter((eq) => {
+                    const meta = getEquipmentCostForAllegiance(eq, allegiance);
+                    return !meta.isCommon && !meta.isAllegianceRare;
+                  });
+
+                  const selectedRecruitEq = rules.equipment.find(
+                    (x) => x.id === recruitEqId
+                  );
+                  const selectedRecruitEqCostMeta = selectedRecruitEq
+                    ? getEquipmentCostForAllegiance(selectedRecruitEq, allegiance)
+                    : null;
+                  const validRecruitSlots: EquipmentSlot[] = selectedRecruitEq
+                    ? getValidSlotsForEquipment(
+                        selectedRecruitEq,
+                        previewRecruitFighter,
+                        rules
+                      )
+                    : [
+                        'Weapon 1',
+                        'Weapon 2',
+                        'Armour 1',
+                        'Armour 2',
+                        'Item',
+                        'Special',
+                      ];
+                  const recruitSlotOptions: EquipmentSlot[] =
+                    overrideRecruitGearRestrictions
+                      ? [
+                          'Weapon 1',
+                          'Weapon 2',
+                          'Armour 1',
+                          'Armour 2',
+                          'Item',
+                          'Special',
+                          'Special 2',
+                          'Special 3',
+                          "Mage's Pouch",
+                          'Weapon Upgrade',
+                        ]
+                      : validRecruitSlots;
+
+                  const isMistGhast = selectedSpecies.id.startsWith('sp-mist-ghast');
+                  const isArmless = selectedSpecies.innateSkillIds.includes('sk-armless');
+                  const hasStartingGearOrSpell =
+                    recruitItems.length > 0 ||
+                    (previewEffectiveIsMagicUser && selectedSpellIds.length > 0) ||
+                    isMistGhast ||
+                    isArmless;
+
+                  return (
+                    <div className="bg-stone-950/90 border border-amber-700/40 rounded-xl p-3.5 space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <div className="text-xs font-bold text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+                            <Package className="w-3.5 h-3.5 text-amber-400" />
+                            Starting Equipment &amp; {allegiance?.name || 'Allegiance'} Gear
+                          </div>
+                          <div className="text-[11px] text-stone-400">
+                            Kit out this recruit with Common General Store gear and{' '}
+                            <strong className="text-amber-300">
+                              {allegiance?.name} Starting Rare Equipment
+                            </strong>{' '}
+                            at official creation prices.
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-stone-900 border border-stone-700 text-stone-300">
+                            Slots: {previewSlotOcc.usedMainSlots}/{previewSlotOcc.maxMainSlots}
+                          </span>
+                          {recruitGearTotalCost > 0 && (
+                            <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-amber-950/80 border border-amber-700/60 text-amber-300">
+                              +{recruitGearTotalCost}p Gear
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {isMistGhast ? (
+                        <div className="text-[11px] text-stone-400 bg-stone-900/70 border border-stone-800 rounded-lg px-3 py-2">
+                          Mist Ghasts always count as equipped with a One-handed Weapon and cannot
+                          carry any additional Equipment (Rulebook Page 57).
+                        </div>
+                      ) : (
+                        <>
+                          {/* Allegiance Special Starting Rare Equipment Quick-Add Panel */}
+                          {allegianceRareEquipmentList.length > 0 && (
+                            <div className="bg-amber-950/20 border border-amber-800/50 rounded-xl p-2.5 space-y-1.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-[11px] font-bold text-amber-300">
+                                  ★ {allegiance?.name} Starting Rare Equipment (Tap to add or select):
+                                </span>
+                                <span className="text-[10px] text-stone-400">
+                                  {allegianceRareEquipmentList.length} special options unlocked
+                                </span>
+                              </div>
+                              <div className="flex flex-wrap gap-1.5">
+                                {allegianceRareEquipmentList.map(({ eq, opt }) => {
+                                  const check = validateEquipmentForFighter(
+                                    eq,
+                                    previewRecruitFighter,
+                                    previewRecruitWarband,
+                                    rules
+                                  );
+                                  const canQuickAdd =
+                                    overrideRecruitGearRestrictions || check.valid;
+                                  const shortName = eq.name
+                                    .replace(' (1 Vial / Stack)', '')
+                                    .replace('Bonded Critter: ', '')
+                                    .replace(' Weapon Upgrade', '');
+                                  return (
+                                    <button
+                                      key={eq.id}
+                                      type="button"
+                                      onClick={() => {
+                                        setRecruitEqId(eq.id);
+                                        const suggested = findAvailableSlotForEquipment(
+                                          eq,
+                                          previewRecruitFighter,
+                                          previewRecruitWarband.inventory,
+                                          rules
+                                        );
+                                        const validS = getValidSlotsForEquipment(
+                                          eq,
+                                          previewRecruitFighter,
+                                          rules
+                                        );
+                                        setRecruitEqSlot(
+                                          suggested || validS[0] || eq.defaultSlot
+                                        );
+                                        if (canQuickAdd) {
+                                          handleAddRecruitGear(eq, 1);
+                                        }
+                                      }}
+                                      title={
+                                        check.valid
+                                          ? `Add ${eq.name} (${opt.cost}p${
+                                              opt.note ? ` • ${opt.note}` : ''
+                                            }): ${eq.description}`
+                                          : `${eq.name} (${opt.cost}p) — ${check.reason}`
+                                      }
+                                      className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold border transition cursor-pointer ${
+                                        canQuickAdd
+                                          ? 'bg-amber-950/70 hover:bg-amber-900/80 text-amber-200 border-amber-700/60 hover:border-amber-400'
+                                          : 'bg-stone-900/60 text-stone-500 border-stone-800 hover:border-stone-700'
+                                      }`}
+                                    >
+                                      <span>★ {shortName}</span>
+                                      <span className="text-[10px] font-mono px-1 rounded bg-stone-950/80 text-amber-300">
+                                        {opt.cost}p
+                                      </span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Quick-Add Common Basic Loadout Buttons */}
+                          <div className="bg-stone-900/60 border border-stone-800 rounded-xl p-2.5 space-y-1.5">
+                            <div className="text-[11px] font-semibold text-stone-300">
+                              Quick-Add Basic Common Equipment:
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {[
+                                { id: 'eq-one-handed', label: '1H Weapon', qty: 1 },
+                                { id: 'eq-spear', label: 'Spear', qty: 1 },
+                                { id: 'eq-two-handed', label: '2H Weapon', qty: 1 },
+                                { id: 'eq-pole-arm', label: 'Polearm', qty: 1 },
+                                { id: 'eq-rondel-dagger', label: 'Rondel Dagger', qty: 1 },
+                                { id: 'eq-bow', label: 'Bow', qty: 1 },
+                                { id: 'eq-light-crossbow', label: 'Light Crossbow', qty: 1 },
+                                { id: 'eq-sling', label: 'Sling', qty: 1 },
+                                { id: 'eq-pistol', label: 'Pistol', qty: 1 },
+                                { id: 'eq-light-armour', label: 'Light Armour', qty: 1 },
+                                { id: 'eq-heavy-armour', label: 'Heavy Armour', qty: 1 },
+                                { id: 'eq-buckler', label: 'Buckler', qty: 1 },
+                                { id: 'eq-light-shield', label: 'Light Shield', qty: 1 },
+                                { id: 'eq-heavy-shield', label: 'Heavy Shield', qty: 1 },
+                                { id: 'eq-broadhead-arrows', label: '5× Broadhead Arrows', qty: 5 },
+                                { id: 'eq-bodkin-arrows', label: '5× Bodkin Arrows', qty: 5 },
+                                { id: 'eq-lead-slingshot', label: '5× Lead Slingshot', qty: 5 },
+                                { id: 'eq-focus', label: "Mage's Focus", qty: 1 },
+                                { id: 'eq-mages-pouch', label: "Mage's Pouch", qty: 1 },
+                              ].map((preset) => {
+                                const eq = rules.equipment.find((e) => e.id === preset.id);
+                                if (!eq) return null;
+                                const meta = getEquipmentCostForAllegiance(eq, allegiance);
+                                if (!overrideRecruitGearRestrictions && !meta.isAvailableAtCreation) {
+                                  return null;
+                                }
+                                const check = validateEquipmentForFighter(
+                                  eq,
+                                  previewRecruitFighter,
+                                  previewRecruitWarband,
+                                  rules
+                                );
+                                const canQuickAdd =
+                                  overrideRecruitGearRestrictions || check.valid;
+                                const totalCost = meta.cost * preset.qty;
+                                return (
+                                  <button
+                                    key={`${preset.id}-${preset.qty}`}
+                                    type="button"
+                                    onClick={() => {
+                                      setRecruitEqId(eq.id);
+                                      setRecruitEqQuantity(preset.qty);
+                                      if (canQuickAdd) {
+                                        handleAddRecruitGear(eq, preset.qty);
+                                      }
+                                    }}
+                                    title={
+                                      check.valid
+                                        ? `Add ${preset.label} (${totalCost}p): ${
+                                            eq.weaponModifiers || eq.description
+                                          }`
+                                        : `${preset.label} — ${check.reason}`
+                                    }
+                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-medium border transition cursor-pointer ${
+                                      canQuickAdd
+                                        ? 'bg-stone-950 hover:bg-stone-800 text-stone-200 border-stone-700 hover:border-emerald-500/60'
+                                        : 'bg-stone-950/40 text-stone-500 border-stone-800/70'
+                                    }`}
+                                  >
+                                    <span>+ {preset.label}</span>
+                                    <span className="text-[10px] font-mono text-amber-400">
+                                      {totalCost}p
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Filter Tabs + Full Item Selector */}
+                          <div className="space-y-2 pt-1">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex flex-wrap gap-1">
+                                {[
+                                  { key: 'all', label: 'All Starting Gear' },
+                                  {
+                                    key: 'allegiance_rare',
+                                    label: `★ ${allegiance?.name || 'Allegiance'} Rare (${
+                                      allegianceRareEquipmentList.length
+                                    })`,
+                                  },
+                                  { key: 'weapons_armour', label: 'Common Weapons & Armour' },
+                                  { key: 'items_ammo', label: 'Common Items & Ammo' },
+                                  { key: 'ingredients', label: 'Ingredients' },
+                                ].map((tab) => (
+                                  <button
+                                    key={tab.key}
+                                    type="button"
+                                    onClick={() =>
+                                      setRecruitGearFilter(
+                                        tab.key as typeof recruitGearFilter
+                                      )
+                                    }
+                                    className={`px-2 py-0.5 rounded text-[10px] font-semibold border transition cursor-pointer ${
+                                      recruitGearFilter === tab.key
+                                        ? 'bg-amber-500 text-stone-950 border-amber-400'
+                                        : 'bg-stone-900 text-stone-400 border-stone-800 hover:border-stone-700'
+                                    }`}
+                                  >
+                                    {tab.label}
+                                  </button>
+                                ))}
+                              </div>
+
+                              <label className="flex items-center gap-1.5 text-[11px] text-stone-400 hover:text-stone-200 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={overrideRecruitGearRestrictions}
+                                  onChange={(e) =>
+                                    setOverrideRecruitGearRestrictions(e.target.checked)
+                                  }
+                                />
+                                Override equipment &amp; rarity restrictions
+                              </label>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end">
+                              <div className="sm:col-span-7">
+                                <label className="block text-[11px] text-stone-400 mb-1">
+                                  Select Equipment Item
+                                </label>
+                                <select
+                                  value={recruitEqId}
+                                  onChange={(e) => {
+                                    const nextId = e.target.value;
+                                    setRecruitEqId(nextId);
+                                    setRecruitEqQuantity(1);
+                                    const found = rules.equipment.find(
+                                      (x) => x.id === nextId
+                                    );
+                                    if (found) {
+                                      const suggested = findAvailableSlotForEquipment(
+                                        found,
+                                        previewRecruitFighter,
+                                        previewRecruitWarband.inventory,
+                                        rules
+                                      );
+                                      const validS = getValidSlotsForEquipment(
+                                        found,
+                                        previewRecruitFighter,
+                                        rules
+                                      );
+                                      setRecruitEqSlot(
+                                        suggested || validS[0] || found.defaultSlot
+                                      );
+                                    }
+                                  }}
+                                  className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2.5 py-1.5 text-xs"
+                                >
+                                  {(recruitGearFilter === 'all' ||
+                                    recruitGearFilter === 'allegiance_rare') &&
+                                    allegianceRareEquipmentList.length > 0 && (
+                                      <optgroup
+                                        label={`★ ${
+                                          allegiance?.name || 'Allegiance'
+                                        } Starting Rare Equipment`}
+                                      >
+                                        {allegianceRareEquipmentList.map(({ eq, opt }) => {
+                                          const check = validateEquipmentForFighter(
+                                            eq,
+                                            previewRecruitFighter,
+                                            previewRecruitWarband,
+                                            rules
+                                          );
+                                          const disabled =
+                                            !overrideRecruitGearRestrictions && !check.valid;
+                                          return (
+                                            <option
+                                              key={eq.id}
+                                              value={eq.id}
+                                              disabled={disabled}
+                                            >
+                                              ★ {eq.name} — {opt.cost}p
+                                              {opt.note ? ` (${opt.note})` : ''}
+                                              {!check.valid ? ` [${check.reason}]` : ''}
+                                            </option>
+                                          );
+                                        })}
+                                      </optgroup>
+                                    )}
+
+                                  {(recruitGearFilter === 'all' ||
+                                    recruitGearFilter === 'weapons_armour') && (
+                                    <optgroup label="Common Weapons & Armour (General Store)">
+                                      {commonWeaponsArmour.map((eq) => {
+                                        const check = validateEquipmentForFighter(
+                                          eq,
+                                          previewRecruitFighter,
+                                          previewRecruitWarband,
+                                          rules
+                                        );
+                                        const disabled =
+                                          !overrideRecruitGearRestrictions && !check.valid;
+                                        return (
+                                          <option
+                                            key={eq.id}
+                                            value={eq.id}
+                                            disabled={disabled}
+                                          >
+                                            {eq.name} — {eq.cost}p ({eq.category})
+                                            {!check.valid ? ` [${check.reason}]` : ''}
+                                          </option>
+                                        );
+                                      })}
+                                    </optgroup>
+                                  )}
+
+                                  {(recruitGearFilter === 'all' ||
+                                    recruitGearFilter === 'items_ammo') && (
+                                    <optgroup label="Common Items, Ammunition & Consumables">
+                                      {commonItemsAmmo.map((eq) => {
+                                        const check = validateEquipmentForFighter(
+                                          eq,
+                                          previewRecruitFighter,
+                                          previewRecruitWarband,
+                                          rules
+                                        );
+                                        const disabled =
+                                          !overrideRecruitGearRestrictions && !check.valid;
+                                        return (
+                                          <option
+                                            key={eq.id}
+                                            value={eq.id}
+                                            disabled={disabled}
+                                          >
+                                            {eq.name} — {eq.cost}p ({eq.category})
+                                            {!check.valid ? ` [${check.reason}]` : ''}
+                                          </option>
+                                        );
+                                      })}
+                                    </optgroup>
+                                  )}
+
+                                  {(recruitGearFilter === 'all' ||
+                                    recruitGearFilter === 'ingredients') && (
+                                    <optgroup label="Common Magical Ingredients (Requires Mage's Pouch)">
+                                      {commonIngredients.map((eq) => {
+                                        const check = validateEquipmentForFighter(
+                                          eq,
+                                          previewRecruitFighter,
+                                          previewRecruitWarband,
+                                          rules
+                                        );
+                                        const disabled =
+                                          !overrideRecruitGearRestrictions && !check.valid;
+                                        return (
+                                          <option
+                                            key={eq.id}
+                                            value={eq.id}
+                                            disabled={disabled}
+                                          >
+                                            {eq.name} — {eq.cost}p
+                                            {!check.valid ? ` [${check.reason}]` : ''}
+                                          </option>
+                                        );
+                                      })}
+                                    </optgroup>
+                                  )}
+
+                                  {overrideRecruitGearRestrictions &&
+                                    otherRareRelics.length > 0 && (
+                                      <optgroup label="Other Rare & Relic Gear (Unlocked by Override)">
+                                        {otherRareRelics.map((eq) => (
+                                          <option key={eq.id} value={eq.id}>
+                                            {eq.name} — {eq.cost}p ({eq.rarity})
+                                          </option>
+                                        ))}
+                                      </optgroup>
+                                    )}
+                                </select>
+                              </div>
+
+                              <div className="sm:col-span-3">
+                                <label className="block text-[11px] text-stone-400 mb-1">
+                                  Slot
+                                </label>
+                                <select
+                                  value={recruitEqSlot}
+                                  onChange={(e) =>
+                                    setRecruitEqSlot(e.target.value as EquipmentSlot)
+                                  }
+                                  className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2 py-1.5 text-xs"
+                                >
+                                  {recruitSlotOptions.map((slotOpt) => (
+                                    <option key={slotOpt} value={slotOpt}>
+                                      {slotOpt}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              <div className="sm:col-span-2">
+                                <button
+                                  type="button"
+                                  onClick={() => handleAddRecruitGear()}
+                                  className="w-full py-1.5 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-stone-950 font-bold text-xs cursor-pointer"
+                                >
+                                  + Add
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Stackable Consumable Quantity Bar in Recruit Modal */}
+                            {selectedRecruitEq &&
+                              isEquipmentStackable(selectedRecruitEq) &&
+                              selectedRecruitEqCostMeta && (
+                                <div className="bg-emerald-950/30 border border-emerald-700/50 rounded-lg px-3 py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+                                  <div>
+                                    <span className="font-bold text-emerald-300">
+                                      Stackable in 1 {recruitEqSlot} slot:
+                                    </span>{' '}
+                                    <span className="text-stone-300">
+                                      {selectedRecruitEqCostMeta.cost}p each • Total:{' '}
+                                      <strong className="text-amber-300">
+                                        {selectedRecruitEqCostMeta.cost * recruitEqQuantity}p
+                                      </strong>
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setRecruitEqQuantity((q) => Math.max(1, q - 1))
+                                      }
+                                      className="px-2 py-0.5 rounded bg-stone-800 hover:bg-stone-700 text-stone-200 font-bold cursor-pointer"
+                                    >
+                                      -
+                                    </button>
+                                    <input
+                                      type="number"
+                                      min={1}
+                                      max={99}
+                                      value={recruitEqQuantity}
+                                      onChange={(e) =>
+                                        setRecruitEqQuantity(
+                                          Math.max(
+                                            1,
+                                            Math.min(99, parseInt(e.target.value, 10) || 1)
+                                          )
+                                        )
+                                      }
+                                      className="w-12 bg-stone-900 border border-stone-700 rounded px-1.5 py-0.5 text-center font-mono font-bold text-amber-300"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setRecruitEqQuantity((q) => Math.min(99, q + 1))
+                                      }
+                                      className="px-2 py-0.5 rounded bg-stone-800 hover:bg-stone-700 text-stone-200 font-bold cursor-pointer"
+                                    >
+                                      +
+                                    </button>
+                                    {[3, 5, 10].map((n) => (
+                                      <button
+                                        key={n}
+                                        type="button"
+                                        onClick={() => setRecruitEqQuantity(n)}
+                                        className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold cursor-pointer ${
+                                          recruitEqQuantity === n
+                                            ? 'bg-emerald-600 text-stone-950'
+                                            : 'bg-stone-900 text-stone-300 border border-stone-700'
+                                        }`}
+                                      >
+                                        ×{n}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                            {/* Selected Item Details Preview */}
+                            {selectedRecruitEq && selectedRecruitEqCostMeta && (
+                              <div className="bg-stone-900/70 border border-stone-800 rounded-lg px-2.5 py-1.5 text-[11px] text-stone-400 flex flex-wrap items-center justify-between gap-1">
+                                <span>
+                                  <strong className="text-stone-200">
+                                    {selectedRecruitEq.name}
+                                  </strong>{' '}
+                                  ({selectedRecruitEqCostMeta.cost}p
+                                  {selectedRecruitEqCostMeta.isAllegianceRare
+                                    ? ` ★ ${allegiance?.name} Starting Rare`
+                                    : ''}
+                                  ): {selectedRecruitEq.weaponModifiers || selectedRecruitEq.description}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Queued Starting Loadout List */}
+                          {recruitItems.length > 0 ? (
+                            <div className="space-y-1.5 pt-1">
+                              <div className="text-[11px] font-bold text-emerald-300 flex items-center justify-between">
+                                <span>
+                                  Queued Starting Loadout ({recruitItems.length} slot entry,{' '}
+                                  {recruitGearTotalCost}p total)
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setRecruitItems([])}
+                                  className="text-[10px] text-stone-400 hover:text-red-300 underline cursor-pointer"
+                                >
+                                  Clear Loadout
+                                </button>
+                              </div>
+                              <ul className="space-y-1">
+                                {recruitItems.map((item) => {
+                                  const eq = rules.equipment.find(
+                                    (e) => e.id === item.equipmentId
+                                  );
+                                  const stackable = isEquipmentStackable(eq);
+                                  const qty = getItemQuantity(item);
+                                  const slotsUsed = eq
+                                    ? getEffectiveSlotsRequired(
+                                        eq,
+                                        previewRecruitFighter,
+                                        rules
+                                      )
+                                    : 1;
+                                  const meta = eq
+                                    ? getEquipmentCostForAllegiance(eq, allegiance)
+                                    : null;
+                                  return (
+                                    <li
+                                      key={item.instanceId}
+                                      className="flex items-center justify-between gap-2 bg-stone-900 border border-stone-800 rounded-lg px-2.5 py-1.5 text-xs"
+                                    >
+                                      <div className="min-w-0 flex items-center gap-1.5 flex-wrap">
+                                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-stone-950 text-stone-400 border border-stone-800">
+                                          {item.slot}
+                                          {slotsUsed > 1 ? ' (2 Slots)' : ''}
+                                        </span>
+                                        <span className="font-semibold text-stone-200">
+                                          {formatItemDisplayName(item, eq)}
+                                        </span>
+                                        {meta?.isAllegianceRare && (
+                                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-700/50">
+                                            ★ {allegiance?.name} Rare
+                                          </span>
+                                        )}
+                                        <span className="text-amber-400 font-mono text-[11px]">
+                                          {item.purchaseCost}p
+                                        </span>
+                                      </div>
+                                      <div className="flex items-center gap-1 shrink-0">
+                                        {stackable && (
+                                          <div className="flex items-center gap-1 bg-stone-950 border border-stone-700 rounded px-1 py-0.5">
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                handleAdjustRecruitGearQuantity(
+                                                  item.instanceId,
+                                                  -1
+                                                )
+                                              }
+                                              className="px-1 text-stone-300 hover:text-red-300 font-bold cursor-pointer"
+                                            >
+                                              -1
+                                            </button>
+                                            <span className="text-[10px] font-mono font-bold text-amber-300">
+                                              ×{qty}
+                                            </span>
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                handleAdjustRecruitGearQuantity(
+                                                  item.instanceId,
+                                                  1
+                                                )
+                                              }
+                                              className="px-1 text-emerald-300 hover:text-emerald-200 font-bold cursor-pointer"
+                                            >
+                                              +1
+                                            </button>
+                                          </div>
+                                        )}
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            handleRemoveRecruitGear(item.instanceId)
+                                          }
+                                          className="px-1.5 py-0.5 rounded bg-red-950/60 hover:bg-red-900/80 text-red-300 text-[10px] cursor-pointer"
+                                        >
+                                          Remove
+                                        </button>
+                                      </div>
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                            </div>
+                          ) : (
+                            <div
+                              className={`text-[11px] rounded-lg px-2.5 py-1.5 border ${
+                                hasStartingGearOrSpell
+                                  ? 'bg-stone-900/50 border-stone-800 text-stone-400'
+                                  : 'bg-amber-950/30 border-amber-700/50 text-amber-300'
+                              }`}
+                            >
+                              {hasStartingGearOrSpell
+                                ? 'No starting equipment added yet (model has Spells or natural weapons).'
+                                : 'Rulebook Step 6 (Page 41): Every model must be given at least 1 piece of Equipment (Weapon, Armour, or Item) or at least 1 Spell.'}
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
+
               <div>
                 <label className="block text-xs text-stone-400 mb-1">Notes / Loadout Plan</label>
                 <input
@@ -2550,21 +3506,27 @@ export const WarbandRosterView: React.FC = () => {
                 />
               </div>
 
-              <div className="flex items-center justify-between pt-2">
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-stone-800">
                 <label className="flex items-center gap-2 text-xs text-stone-300 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={deductPennies}
                     onChange={(e) => setDeductPennies(e.target.checked)}
                   />
-                  Deduct {totalRecruitCost}p from Warband Treasury ({activeWarband.treasuryPennies}p
-                  available)
+                  <span>
+                    Deduct{' '}
+                    <strong className="text-amber-300">{totalRecruitCost}p</strong>{' '}
+                    {recruitGearTotalCost > 0
+                      ? `(${baseSpeciesRecruitCost}p Fee + ${recruitGearTotalCost}p Gear) `
+                      : ''}
+                    from Treasury ({activeWarband.treasuryPennies}p available)
+                  </span>
                 </label>
                 <button
                   type="submit"
                   className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-stone-950 font-bold text-xs cursor-pointer"
                 >
-                  Recruit Beast
+                  Recruit Beast ({totalRecruitCost}p)
                 </button>
               </div>
             </form>
@@ -2893,7 +3855,7 @@ export const WarbandRosterView: React.FC = () => {
                   className="bg-stone-950 border border-stone-800 rounded-xl p-4 space-y-3"
                 >
                   <h4 className="text-xs font-bold uppercase tracking-wider text-amber-400">
-                    Purchase &amp; Equip New Gear (2.0 General Store)
+                    Purchase &amp; Equip New Gear (Allegiance &amp; 2.0 General Store)
                   </h4>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div className="sm:col-span-2">
@@ -2922,21 +3884,72 @@ export const WarbandRosterView: React.FC = () => {
                         }}
                         className="w-full bg-stone-900 border border-stone-700 rounded-lg px-3 py-1.5 text-xs"
                       >
-                        {sortedEquipment.map((eq) => {
-                          const check = validateEquipmentForFighter(
-                            eq,
-                            liveFighter,
-                            activeWarband,
-                            rules
-                          );
-                          const disabled = !overrideGearRestrictions && !check.valid;
-                          return (
-                            <option key={eq.id} value={eq.id} disabled={disabled}>
-                              {eq.name} — {eq.cost}p ({eq.category} • {eq.rarity})
-                              {!check.valid ? ` [${check.reason}]` : ''}
-                            </option>
-                          );
-                        })}
+                        {allegianceRareEquipmentList.length > 0 && (
+                          <optgroup
+                            label={`★ ${allegiance?.name || 'Allegiance'} Starting Rare Equipment`}
+                          >
+                            {allegianceRareEquipmentList.map((eq) => {
+                              const check = validateEquipmentForFighter(
+                                eq,
+                                liveFighter,
+                                activeWarband,
+                                rules
+                              );
+                              const disabled = !overrideGearRestrictions && !check.valid;
+                              const priceInfo = getEquipmentCostForAllegiance(eq, allegiance);
+                              return (
+                                <option key={`alg-buy-${eq.id}`} value={eq.id} disabled={disabled}>
+                                  ★ {eq.name} — {priceInfo.cost}p ({eq.category} •{' '}
+                                  {allegiance?.name} Rare)
+                                  {!check.valid ? ` [${check.reason}]` : ''}
+                                </option>
+                              );
+                            })}
+                          </optgroup>
+                        )}
+                        <optgroup label="Common Equipment (General Store)">
+                          {sortedEquipment
+                            .filter((eq) => eq.rarity === 'Common')
+                            .map((eq) => {
+                              const check = validateEquipmentForFighter(
+                                eq,
+                                liveFighter,
+                                activeWarband,
+                                rules
+                              );
+                              const disabled = !overrideGearRestrictions && !check.valid;
+                              const priceInfo = getEquipmentCostForAllegiance(eq, allegiance);
+                              return (
+                                <option key={eq.id} value={eq.id} disabled={disabled}>
+                                  {eq.name} — {priceInfo.cost}p ({eq.category} • Common)
+                                  {!check.valid ? ` [${check.reason}]` : ''}
+                                </option>
+                              );
+                            })}
+                        </optgroup>
+                        <optgroup label="Campaign Rare & Relic Equipment">
+                          {sortedEquipment
+                            .filter(
+                              (eq) =>
+                                eq.rarity !== 'Common' && !allegianceRareIds.has(eq.id)
+                            )
+                            .map((eq) => {
+                              const check = validateEquipmentForFighter(
+                                eq,
+                                liveFighter,
+                                activeWarband,
+                                rules
+                              );
+                              const disabled = !overrideGearRestrictions && !check.valid;
+                              const priceInfo = getEquipmentCostForAllegiance(eq, allegiance);
+                              return (
+                                <option key={eq.id} value={eq.id} disabled={disabled}>
+                                  {eq.name} — {priceInfo.cost}p ({eq.category} • {eq.rarity})
+                                  {!check.valid ? ` [${check.reason}]` : ''}
+                                </option>
+                              );
+                            })}
+                        </optgroup>
                       </select>
                     </div>
                     <div>
@@ -2965,9 +3978,13 @@ export const WarbandRosterView: React.FC = () => {
                           Stackable Consumable — All copies share 1 {buySlot} slot
                         </div>
                         <div className="text-[11px] text-stone-400">
-                          Unit cost: {selectedBuyEq.cost}p each • Total for {buyQuantity}:{' '}
+                          Unit cost: {getEquipmentCostForAllegiance(selectedBuyEq, allegiance).cost}p each • Total for {buyQuantity}:{' '}
                           <strong className="text-amber-300">
-                            {freeGrant ? 0 : selectedBuyEq.cost * buyQuantity}p
+                            {freeGrant
+                              ? 0
+                              : getEquipmentCostForAllegiance(selectedBuyEq, allegiance).cost *
+                                buyQuantity}
+                            p
                           </strong>
                         </div>
                       </div>
@@ -3021,7 +4038,11 @@ export const WarbandRosterView: React.FC = () => {
                     <div className="bg-stone-900/80 border border-stone-800 rounded-lg px-3 py-2 text-[11px] text-stone-300 space-y-0.5">
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <span className="font-semibold text-amber-300">
-                          {selectedBuyEq.name} ({selectedBuyEq.cost}p
+                          {selectedBuyEq.name} (
+                          {getEquipmentCostForAllegiance(selectedBuyEq, allegiance).cost}p
+                          {getEquipmentCostForAllegiance(selectedBuyEq, allegiance).isAllegianceRare
+                            ? ` ★ ${allegiance?.name} Starting Rare`
+                            : ''}
                           {selectedBuyEq.postBattlePriceNote
                             ? ` / Post-Battle: ${selectedBuyEq.postBattlePriceNote}`
                             : ''}
@@ -3061,7 +4082,12 @@ export const WarbandRosterView: React.FC = () => {
                     >
                       Buy &amp; Equip
                       {selectedBuyEq && isEquipmentStackable(selectedBuyEq) && buyQuantity > 1
-                        ? ` (×${buyQuantity} — ${freeGrant ? 0 : selectedBuyEq.cost * buyQuantity}p)`
+                        ? ` (×${buyQuantity} — ${
+                            freeGrant
+                              ? 0
+                              : getEquipmentCostForAllegiance(selectedBuyEq, allegiance).cost *
+                                buyQuantity
+                          }p)`
                         : ''}
                     </button>
                   </div>

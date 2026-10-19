@@ -1,7 +1,7 @@
 import { RulesDataset, Warband } from '../types/game';
 
 export const DEFAULT_RULES_DATASET: RulesDataset = {
-  version: '2.0.7-official-2e',
+  version: '2.0.8-official-2e',
   species: [
     // =========================================================================
     // SMALL BEASTS (Base Level 1 • 30mm Base — Rulebook Page 43)
@@ -1170,6 +1170,17 @@ export const DEFAULT_RULES_DATASET: RulesDataset = {
         description:
           'Two of your models may improve their Strike dice by one level (max D12). Increases the model’s Level by 1.',
       },
+      startingRareEquipment: [
+        { equipmentId: 'eq-master-smithed-upgrade', cost: 12, note: '12p + cost of weapon' },
+        { equipmentId: 'eq-war-bow', cost: 20 },
+        { equipmentId: 'eq-heavy-crossbow', cost: 27 },
+        { equipmentId: 'eq-caliver', cost: 20 },
+        { equipmentId: 'eq-very-heavy-armour', cost: 40 },
+        { equipmentId: 'eq-silk-undershirt', cost: 5 },
+        { equipmentId: 'eq-telescope', cost: 10 },
+        { equipmentId: 'eq-relic', cost: 4 },
+        { equipmentId: 'eq-antidote', cost: 3 },
+      ],
       allowedSpeciesNote: 'All standard species.',
       specialRules:
         'Starting Bonus — Expert Training: Two models may improve Strike by 1 die step (max D12; +1 Level each). Support Quest — The King Wills It!: +1 Fate & +1 XP when taking an enemy OoA with an Attack Action.',
@@ -1198,6 +1209,17 @@ export const DEFAULT_RULES_DATASET: RulesDataset = {
         description:
           'Two of your models may improve their Move, Nimbleness, or Concealment dice by one level (max D12). Increases the model’s Level by 1.',
       },
+      startingRareEquipment: [
+        { equipmentId: 'eq-caliver', cost: 25 },
+        { equipmentId: 'eq-silk-undershirt', cost: 5 },
+        { equipmentId: 'eq-dispel-scroll', cost: 10 },
+        { equipmentId: 'eq-blind-dust', cost: 7 },
+        { equipmentId: 'eq-telescope', cost: 10 },
+        { equipmentId: 'eq-paralysing-poison', cost: 4 },
+        { equipmentId: 'eq-pain-poison', cost: 2 },
+        { equipmentId: 'eq-mortal-poison', cost: 5 },
+        { equipmentId: 'eq-antidote', cost: 3 },
+      ],
       allowedSpeciesNote: 'All standard species.',
       specialRules:
         'Starting Bonus — Quick and Quiet: Two models may improve Move, Nimbleness, or Concealment by 1 die step (max D12; +1 Level each). Special Rule — Born Lucky: Start each game with +3 extra Fate points to distribute freely.',
@@ -1227,6 +1249,23 @@ export const DEFAULT_RULES_DATASET: RulesDataset = {
         description:
           'Two of your models may improve their Presence or Awareness dice by one level (max D12). Increases the model’s Level by 1.',
       },
+      startingRareEquipment: [
+        { equipmentId: 'eq-heavy-crossbow', cost: 25, note: 'Reduced starting cost (25p)' },
+        { equipmentId: 'eq-caliver', cost: 20 },
+        { equipmentId: 'eq-very-heavy-armour', cost: 42 },
+        { equipmentId: 'eq-silk-undershirt', cost: 5 },
+        { equipmentId: 'eq-dispel-scroll', cost: 10 },
+        { equipmentId: 'eq-shielding-talisman', cost: 7 },
+        { equipmentId: 'eq-mirroring-talisman', cost: 10 },
+        { equipmentId: 'eq-blind-dust', cost: 7 },
+        { equipmentId: 'eq-telescope', cost: 10 },
+        { equipmentId: 'eq-paralysing-poison', cost: 4 },
+        { equipmentId: 'eq-pain-poison', cost: 2 },
+        { equipmentId: 'eq-mortal-poison', cost: 5 },
+        { equipmentId: 'eq-relic', cost: 4 },
+        { equipmentId: 'eq-antidote', cost: 3 },
+        { equipmentId: 'eq-grimoire', cost: 20 },
+      ],
       allowedSpeciesNote: 'All standard species.',
       specialRules:
         'Starting Bonus — One to Watch: Two models may improve Presence or Awareness by 1 die step (max D12; +1 Level each). Special Rule — Deep Pockets: Start with 375 Pennies (instead of 350p) and roll 3d6 (instead of 2d6) for Rare Equipment Availability.',
@@ -1255,6 +1294,14 @@ export const DEFAULT_RULES_DATASET: RulesDataset = {
         description:
           'Three of your models may improve their Strike or Ranged dice by one level (max D12). Increases the model’s Level by 1.',
       },
+      startingRareEquipment: [
+        { equipmentId: 'eq-master-smithed-upgrade', cost: 12, note: '12p + cost of weapon' },
+        { equipmentId: 'eq-war-bow', cost: 20 },
+        { equipmentId: 'eq-silk-undershirt', cost: 5 },
+        { equipmentId: 'eq-telescope', cost: 10 },
+        { equipmentId: 'eq-relic', cost: 4 },
+        { equipmentId: 'eq-antidote', cost: 3 },
+      ],
       allowedSpeciesNote: 'All standard species.',
       specialRules:
         'Starting Bonus — Expert Training: Three models may improve Strike or Ranged by 1 die step (max D12; +1 Level each). Special Rule — Travel Light: No model may use Heavy/Very Heavy Armour, Heavy Shield, Heavy Crossbow, or Black Powder weapons.',
@@ -1276,6 +1323,24 @@ export const DEFAULT_RULES_DATASET: RulesDataset = {
         allowedStats: ['fortitude'],
         description:
           'Two of your models may improve their Fortitude dice by one level (max D12). Increases the model’s Level by 1.',
+      },
+      startingRareEquipment: [
+        { equipmentId: 'eq-malleus-maleficarum', cost: 10, note: '10p + cost of weapon' },
+        { equipmentId: 'eq-heavy-crossbow', cost: 28 },
+        { equipmentId: 'eq-caliver', cost: 22 },
+        { equipmentId: 'eq-very-heavy-armour', cost: 40 },
+        { equipmentId: 'eq-silk-undershirt', cost: 5 },
+        { equipmentId: 'eq-dispel-scroll', cost: 8, note: 'Reduced starting cost (8p)' },
+        { equipmentId: 'eq-shielding-talisman', cost: 7 },
+        { equipmentId: 'eq-mirroring-talisman', cost: 10 },
+        { equipmentId: 'eq-telescope', cost: 10 },
+        { equipmentId: 'eq-relic', cost: 4 },
+        { equipmentId: 'eq-critter-bonded-grub', cost: 25 },
+      ],
+      startingSpeciesCostOverrides: {
+        'sp-tracker-grub': 23,
+        'sp-attack-grub': 26,
+        'sp-damping-grub': 24,
       },
       allowedSpeciesNote: 'All standard species. Frequently use Stag Beetle Grubs.',
       specialRules:
@@ -1304,6 +1369,30 @@ export const DEFAULT_RULES_DATASET: RulesDataset = {
         allowedSkillIds: ['sk-strong-1', 'sk-tough-1'],
         description:
           'Three of your models may take either the Strong (1) Skill or the Tough (1) Skill (cumulative with Species Strong/Tough). Increases the model’s Level by 1.',
+      },
+      startingRareEquipment: [
+        { equipmentId: 'eq-very-heavy-armour', cost: 45 },
+        { equipmentId: 'eq-dispel-scroll', cost: 10 },
+        { equipmentId: 'eq-shielding-talisman', cost: 7 },
+        { equipmentId: 'eq-mirroring-talisman', cost: 10 },
+        { equipmentId: 'eq-blind-dust', cost: 7 },
+        { equipmentId: 'eq-berserker-seeds', cost: 8 },
+        { equipmentId: 'eq-old-one-brews', cost: 13 },
+        { equipmentId: 'eq-paralysing-poison', cost: 4 },
+        { equipmentId: 'eq-pain-poison', cost: 2 },
+        { equipmentId: 'eq-mortal-poison', cost: 5 },
+        { equipmentId: 'eq-relic', cost: 4 },
+        { equipmentId: 'eq-antidote', cost: 3 },
+        { equipmentId: 'eq-critter-hornet', cost: 32 },
+        { equipmentId: 'eq-critter-centipede', cost: 23 },
+        { equipmentId: 'eq-critter-spider', cost: 20 },
+        { equipmentId: 'eq-critter-beetle', cost: 23 },
+        { equipmentId: 'eq-critter-bonded-grub', cost: 23, note: 'Reduced starting cost (23p)' },
+      ],
+      startingSpeciesCostOverrides: {
+        'sp-tracker-grub': 20,
+        'sp-attack-grub': 23,
+        'sp-damping-grub': 21,
       },
       allowedSpeciesNote: 'All standard species.',
       specialRules:
@@ -1339,6 +1428,12 @@ export const DEFAULT_RULES_DATASET: RulesDataset = {
         description:
           'Two of your models may improve their Fortitude or Presence dice by one level (max D12). Increases the model’s Level by 1.',
       },
+      startingRareEquipment: [
+        { equipmentId: 'eq-dispel-scroll', cost: 10 },
+        { equipmentId: 'eq-shielding-talisman', cost: 10 },
+        { equipmentId: 'eq-mirroring-talisman', cost: 13 },
+        { equipmentId: 'eq-grimoire', cost: 17, note: 'Reduced starting cost (17p)' },
+      ],
       allowedSpeciesNote:
         'All models in an Arcane Conclave Band MUST be Magic-users and start with at least one Spell.',
       specialRules:
@@ -1374,6 +1469,12 @@ export const DEFAULT_RULES_DATASET: RulesDataset = {
         description:
           'Two of your models may improve any one Stat by one level (max D12). Increases the model’s Level by 1.',
       },
+      startingRareEquipment: [
+        { equipmentId: 'eq-dispel-scroll', cost: 10 },
+        { equipmentId: 'eq-shielding-talisman', cost: 10 },
+        { equipmentId: 'eq-mirroring-talisman', cost: 13 },
+        { equipmentId: 'eq-grimoire', cost: 20 },
+      ],
       allowedSpeciesNote:
         'Leader and Second must be a Magic-user or Stable Ghast. At least half the models must be Mist Ghasts (Band limit 13 models instead of 10).',
       specialRules:
@@ -1399,6 +1500,13 @@ export const DEFAULT_RULES_DATASET: RulesDataset = {
         description:
           'Two of your models may improve their Strike or Ranged dice by one level (max D12). Increases the model’s Level by 1.',
       },
+      startingRareEquipment: [
+        { equipmentId: 'eq-war-bow', cost: 20 },
+        { equipmentId: 'eq-heavy-crossbow', cost: 27 },
+        { equipmentId: 'eq-caliver', cost: 20 },
+        { equipmentId: 'eq-very-heavy-armour', cost: 40 },
+        { equipmentId: 'eq-relic', cost: 5 },
+      ],
       allowedSpeciesNote:
         'Maximum of 1 Magic-user in the Band. Models may be Old Campaigners or Raw Recruits.',
       specialRules:
@@ -1420,6 +1528,19 @@ export const DEFAULT_RULES_DATASET: RulesDataset = {
         allowedStats: ['move', 'nimbleness', 'fortitude'],
         description:
           'Two of your models may improve their Move, Nimbleness, or Fortitude dice by one level (max D12). Increases the model’s Level by 1.',
+      },
+      startingRareEquipment: [
+        { equipmentId: 'eq-bagpipes', cost: 20, note: 'Max 1 Piper per Band' },
+        { equipmentId: 'eq-critter-hornet', cost: 30, note: 'Reduced starting cost (30p)' },
+        { equipmentId: 'eq-critter-centipede', cost: 23 },
+        { equipmentId: 'eq-critter-spider', cost: 20 },
+        { equipmentId: 'eq-critter-beetle', cost: 23 },
+        { equipmentId: 'eq-critter-bonded-grub', cost: 23, note: 'Reduced starting cost (23p)' },
+      ],
+      startingSpeciesCostOverrides: {
+        'sp-tracker-grub': 21,
+        'sp-attack-grub': 24,
+        'sp-damping-grub': 22,
       },
       allowedSpeciesNote: 'All standard species. One model may purchase Bagpipes (20p) as a Piper.',
       specialRules:

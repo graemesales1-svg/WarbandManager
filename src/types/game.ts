@@ -67,6 +67,12 @@ export interface AllegianceStartingBonusRule {
   description: string;
 }
 
+export interface AllegianceStartingEquipmentOption {
+  equipmentId: string;
+  cost: number; // Official starting price in Pennies for this Allegiance
+  note?: string; // e.g. "+12p to Weapon cost" or "Discounted starting price"
+}
+
 export interface AllegianceRef {
   id: string;
   name: string;
@@ -81,6 +87,8 @@ export interface AllegianceRef {
   magicUserRuleNote?: string;
   startingPenniesOverride?: number; // e.g. 375 for Freebeasts & Witch Hunters
   startingBonus?: AllegianceStartingBonusRule;
+  startingRareEquipment?: AllegianceStartingEquipmentOption[];
+  startingSpeciesCostOverrides?: Record<string, number>; // e.g. Stag Beetle Grub discounts for Witch Hunters, Wildlings, Hillfolk
   allowedSpeciesNote: string;
   specialRules: string;
 }
