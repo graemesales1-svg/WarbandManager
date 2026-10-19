@@ -21,6 +21,9 @@ interface AppContextValue {
   user: UserProfile;
   isCloudConfigured: boolean;
   isSyncing: boolean;
+  lastSyncedAt: string | null;
+  lastSyncError: string | null;
+  cloudWarbandCount: number | null;
   rules: RulesDataset;
   warbands: Warband[];
   activeWarbandId: string;
@@ -49,6 +52,30 @@ interface AppContextValue {
   logCampaignMatch: (match: Omit<CampaignMatch, 'id' | 'playedAt'>) => Promise<void>;
   exportAllDataJson: () => string;
   importAllDataJson: (rawJson: string) => boolean;
+}
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isValidUuid(val?: string | null): boolean {
+  return Boolean(val && UUID_REGEX.test(val));
+}
+
+function toUserScopedUuid(rawId: string, userId: string): string {
+  if (isValidUuid(rawId)) return rawId;
+  const seed = `${userId}:${rawId}`;
+  const hex: string[] = [];
+  for (let i = 0; i < 16; i++) {
+    let h = 2166136261 ^ i;
+    for (let j = 0; j < seed.length; j++) {
+      h ^= seed.charCodeAt(j);
+      h = Math.imul(h, 16777619);
+    }
+    let byte = (h >>> 0) & 0xff;
+    if (i === 6) byte = (byte & 0x0f) | 0x40;
+    if (i === 8) byte = (byte & 0x3f) | 0x80;
+    hex.push(byte.toString(16).padStart(2, '0'));
+  }
+  return `${hex.slice(0, 4).join('')}-${hex.slice(4, 6).join('')}-${hex.slice(6, 8).join('')}-${hex.slice(8, 10).join('')}-${hex.slice(10, 16).join('')}`;
 }
 
 const STORAGE_KEYS = {
@@ -170,6 +197,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const [lastSyncError, setLastSyncError] = useState<string | null>(null);
+  const [cloudWarbandCount, setCloudWarbandCount] = useState<number | null>(null);
   const supabase = getSupabaseClient();
   const isCloudConfigured = Boolean(supabase);
 
@@ -236,6 +266,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           email: 'Offline / Local Browser Mode',
           isCloudAuthenticated: false,
         });
+        setCloudWarbandCount(null);
       }
     });
 
@@ -245,22 +276,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   async function fetchCloudData(client: NonNullable<typeof supabase>) {
     setIsSyncing(true);
     try {
-      const { data: wbRows } = await client
+      const { data: wbRows, error: wbErr } = await client
         .from('warbands')
         .select('payload')
         .order('updated_at', { ascending: false });
 
-      if (wbRows && wbRows.length > 0) {
-        const cloudWarbands = wbRows.map((r: { payload: Warband }) => r.payload);
-        setWarbands((prevLocal) => {
-          const cloudIds = new Set(cloudWarbands.map((w) => w.id));
-          // Keep any local warbands that haven't been synced yet (excluding default sample if cloud has data)
-          const unsyncedLocal = prevLocal.filter(
-            (w) => !cloudIds.has(w.id) && w.id !== SAMPLE_WARBAND.id
-          );
-          const merged = [...cloudWarbands, ...unsyncedLocal];
-          return merged.length > 0 ? merged : cloudWarbands;
-        });
+      if (wbErr) {
+        setLastSyncError(wbErr.message);
+      } else if (wbRows) {
+        setCloudWarbandCount(wbRows.length);
+        setLastSyncedAt(new Date().toISOString());
+        setLastSyncError(null);
+        if (wbRows.length > 0) {
+          const cloudWarbands = wbRows.map((r: { payload: Warband }) => r.payload);
+          setWarbands((prevLocal) => {
+            const cloudIds = new Set(cloudWarbands.map((w) => w.id));
+            // Keep any local warbands that haven't been synced yet (excluding default sample if cloud has data)
+            const unsyncedLocal = prevLocal.filter(
+              (w) => !cloudIds.has(w.id) && w.id !== SAMPLE_WARBAND.id
+            );
+            const merged = [...cloudWarbands, ...unsyncedLocal];
+            return merged.length > 0 ? merged : cloudWarbands;
+          });
+        }
       }
 
       const { data: campRows } = await client.from('campaigns').select('*');
@@ -385,19 +423,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { syncedCount: 0, error: 'Please sign in first to sync warbands to the cloud.' };
     }
     setIsSyncing(true);
+    setLastSyncError(null);
     try {
       let count = 0;
+      let lastErr: string | undefined;
       for (const wb of warbands) {
+        const cloudId = toUserScopedUuid(wb.id, user.id);
+        const cloudCampaignId = isValidUuid(wb.campaignId) ? wb.campaignId : null;
         const stamped: Warband = {
           ...wb,
+          id: cloudId,
+          userId: user.id,
           ownerName: user.name,
           updatedAt: new Date().toISOString(),
         };
         const { error } = await supabase.from('warbands').upsert({
-          id: stamped.id,
+          id: cloudId,
           user_id: user.id,
           owner_name: user.name,
-          campaign_id: stamped.campaignId || null,
+          campaign_id: cloudCampaignId,
           name: stamped.name,
           allegiance_id: stamped.allegianceId,
           den_name: stamped.denName,
@@ -407,14 +451,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           payload: stamped,
           updated_at: stamped.updatedAt,
         });
-        if (!error) count++;
+        if (error) {
+          lastErr = error.message;
+        } else {
+          count++;
+        }
       }
       await fetchCloudData(supabase);
+      if (lastErr) {
+        setLastSyncError(lastErr);
+        return { syncedCount: count, error: lastErr };
+      }
+      setLastSyncedAt(new Date().toISOString());
       return { syncedCount: count };
     } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to sync warbands';
+      setLastSyncError(msg);
       return {
         syncedCount: 0,
-        error: err instanceof Error ? err.message : 'Failed to sync warbands',
+        error: msg,
       };
     } finally {
       setIsSyncing(false);
@@ -433,6 +488,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isCloudAuthenticated: false,
     };
     setUser(fallback);
+    setCloudWarbandCount(null);
     localStorage.setItem(STORAGE_KEYS.LOCAL_USER, JSON.stringify(fallback));
   };
 
@@ -443,20 +499,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const saveWarband = async (updated: Warband) => {
+    const cloudId =
+      supabase && user.isCloudAuthenticated
+        ? toUserScopedUuid(updated.id, user.id)
+        : updated.id;
     const stamped: Warband = {
       ...updated,
+      id: cloudId,
       updatedAt: new Date().toISOString(),
     };
-    setWarbands((prev) => prev.map((w) => (w.id === stamped.id ? stamped : w)));
+    setWarbands((prev) =>
+      prev.map((w) => (w.id === updated.id || w.id === stamped.id ? stamped : w))
+    );
+    if (activeWarbandId === updated.id && cloudId !== updated.id) {
+      setActiveWarbandIdState(cloudId);
+    }
 
     if (supabase && user.isCloudAuthenticated) {
       setIsSyncing(true);
       try {
-        await supabase.from('warbands').upsert({
+        const cloudCampaignId = isValidUuid(stamped.campaignId) ? stamped.campaignId : null;
+        const { error } = await supabase.from('warbands').upsert({
           id: stamped.id,
           user_id: user.id,
           owner_name: user.name,
-          campaign_id: stamped.campaignId || null,
+          campaign_id: cloudCampaignId,
           name: stamped.name,
           allegiance_id: stamped.allegianceId,
           den_name: stamped.denName,
@@ -466,6 +533,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           payload: stamped,
           updated_at: stamped.updatedAt,
         });
+        if (error) {
+          setLastSyncError(error.message);
+        } else {
+          setLastSyncError(null);
+          setLastSyncedAt(new Date().toISOString());
+        }
       } finally {
         setIsSyncing(false);
       }
@@ -488,7 +561,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       return remaining;
     });
-    if (supabase && user.isCloudAuthenticated) {
+    if (supabase && user.isCloudAuthenticated && isValidUuid(id)) {
       await supabase.from('warbands').delete().eq('id', id);
     }
   };
@@ -562,16 +635,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       playedAt: new Date().toISOString(),
     };
     setMatches((prev) => [newMatch, ...prev]);
-    if (supabase && user.isCloudAuthenticated) {
+    if (supabase && user.isCloudAuthenticated && isValidUuid(newMatch.campaignId)) {
       await supabase.from('campaign_matches').insert({
         id: newMatch.id,
         campaign_id: newMatch.campaignId,
         scenario: newMatch.scenario,
-        warband_a_id: newMatch.warbandAId,
+        warband_a_id: isValidUuid(newMatch.warbandAId) ? newMatch.warbandAId : null,
         warband_a_name: newMatch.warbandAName,
-        warband_b_id: newMatch.warbandBId,
+        warband_b_id: isValidUuid(newMatch.warbandBId) ? newMatch.warbandBId : null,
         warband_b_name: newMatch.warbandBName,
-        winner_warband_id: newMatch.winnerWarbandId,
+        winner_warband_id: isValidUuid(newMatch.winnerWarbandId) ? newMatch.winnerWarbandId : null,
         summary_notes: newMatch.summaryNotes,
         played_at: newMatch.playedAt,
         created_by: user.id,
@@ -617,6 +690,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         user,
         isCloudConfigured,
         isSyncing,
+        lastSyncedAt,
+        lastSyncError,
+        cloudWarbandCount,
         rules,
         warbands,
         activeWarbandId,

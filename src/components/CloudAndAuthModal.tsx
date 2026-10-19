@@ -28,6 +28,9 @@ export const CloudAndAuthModal: React.FC<Props> = ({ onClose }) => {
     user,
     isCloudConfigured,
     isSyncing,
+    lastSyncedAt,
+    lastSyncError,
+    cloudWarbandCount,
     signInWithGoogle,
     signInWithEmail,
     signUpWithEmail,
@@ -206,6 +209,28 @@ export const CloudAndAuthModal: React.FC<Props> = ({ onClose }) => {
               </div>
             )}
           </div>
+
+          {user.isCloudAuthenticated && (
+            <div className="bg-stone-900/80 border border-stone-800 rounded-lg px-3 py-2 text-[11px] flex flex-wrap items-center justify-between gap-2">
+              <span className="text-stone-300">
+                Cloud Database Rows:{' '}
+                <strong className="text-emerald-400">
+                  {cloudWarbandCount !== null ? `${cloudWarbandCount} warband(s)` : 'Checking...'}
+                </strong>
+              </span>
+              {lastSyncedAt && (
+                <span className="text-stone-400">
+                  Last Synced: {new Date(lastSyncedAt).toLocaleTimeString()}
+                </span>
+              )}
+            </div>
+          )}
+
+          {lastSyncError && (
+            <div className="p-2.5 rounded-lg text-xs border bg-red-950/50 border-red-700/60 text-red-200">
+              Cloud Sync Error: {lastSyncError}
+            </div>
+          )}
 
           {authMessage && (
             <div
