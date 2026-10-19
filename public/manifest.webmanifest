@@ -1,0 +1,18 @@
+{
+  "name": "Northymbra Roster — Burrows & Badgers 2.0",
+  "short_name": "B&B 2.0 Roster",
+  "description": "Burrows & Badgers 2nd Edition Warband Roster, Den, Active Match Tracker & Campaign Manager",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0c0a09",
+  "theme_color": "#1c1917",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

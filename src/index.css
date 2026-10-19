@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+@layer base {
+  .font-serif {
+    font-family: 'Cinzel', Georgia, serif;
+  }
+  body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+}
+
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+}
