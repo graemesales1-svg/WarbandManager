@@ -27,4 +27,10 @@ run('git add -A', distDir);
 run('git commit -m "Deploy production build to GitHub Pages"', distDir);
 run(`git push -f ${remoteUrl} gh-pages:gh-pages`, distDir);
 
+try {
+  run('gh api -X POST repos/graemesales1-svg/WarbandManager/pages/builds');
+} catch {
+  // Ignore if build already triggered automatically by push
+}
+
 console.log('\n✓ Successfully deployed to https://graemesales1-svg.github.io/WarbandManager/');
