@@ -338,7 +338,7 @@ export const WarbandRosterView: React.FC = () => {
 
   // Dismiss Beast Modal State
   const [fighterToDismiss, setFighterToDismiss] = useState<Fighter | null>(null);
-  const [refundDismissedBeast, setRefundDismissedBeast] = useState(true);
+  const [refundDismissedBeast, setRefundDismissedBeast] = useState(false);
   const [refundGearWithBeast, setRefundGearWithBeast] = useState(true);
 
   if (!activeWarband) {
@@ -944,7 +944,7 @@ export const WarbandRosterView: React.FC = () => {
 
   const openDismissFighterModal = (fighter: Fighter) => {
     setFighterToDismiss(fighter);
-    setRefundDismissedBeast(true);
+    setRefundDismissedBeast(false);
     setRefundGearWithBeast(true);
   };
 
