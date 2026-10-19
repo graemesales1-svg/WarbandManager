@@ -4,7 +4,12 @@ import {
   EquippedOrStashedItem,
   WarbandDenUpgradeInstance,
 } from '../types/game';
-import { validateEquipmentForFighter } from '../utils/gameMath';
+import {
+  formatItemDisplayName,
+  getItemQuantity,
+  isEquipmentStackable,
+  validateEquipmentForFighter,
+} from '../utils/gameMath';
 import {
   Home,
   Package,
@@ -35,6 +40,7 @@ export const DenAndStashView: React.FC = () => {
 
   // Stash purchase state
   const [stashEqId, setStashEqId] = useState(sortedEquipment[0]?.id || '');
+  const [stashQuantity, setStashQuantity] = useState(1);
   const [stashCustomName, setStashCustomName] = useState('');
   const [stashFree, setStashFree] = useState(false);
 
@@ -118,26 +124,56 @@ export const DenAndStashView: React.FC = () => {
     const eq = rules.equipment.find((x) => x.id === stashEqId);
     if (!eq) return;
 
-    const cost = stashFree ? 0 : eq.cost;
+    const stackable = isEquipmentStackable(eq);
+    const qty = stackable ? Math.max(1, Math.min(99, stashQuantity || 1)) : 1;
+    const totalValueCost = eq.cost * qty;
+    const cost = stashFree ? 0 : totalValueCost;
     if (cost > activeWarband.treasuryPennies) {
       alert(`Insufficient Pennies (${activeWarband.treasuryPennies}p in Treasury).`);
       return;
     }
 
-    const newItem: EquippedOrStashedItem = {
-      instanceId: crypto.randomUUID(),
-      equipmentId: eq.id,
-      assignedFighterId: null,
-      slot: eq.defaultSlot,
-      purchaseCost: eq.cost,
-      customName: stashCustomName.trim() || undefined,
-    };
+    const existingInStash =
+      stackable && !stashCustomName.trim()
+        ? activeWarband.inventory.find(
+            (i) =>
+              i.assignedFighterId === null &&
+              i.equipmentId === eq.id &&
+              !i.isConsumed &&
+              !i.customName
+          )
+        : undefined;
+
+    let nextInventory: EquippedOrStashedItem[];
+    if (existingInStash) {
+      const mergedQty = getItemQuantity(existingInStash) + qty;
+      nextInventory = activeWarband.inventory.map((i) =>
+        i.instanceId === existingInStash.instanceId
+          ? {
+              ...i,
+              quantity: mergedQty,
+              purchaseCost: i.purchaseCost + totalValueCost,
+            }
+          : i
+      );
+    } else {
+      const newItem: EquippedOrStashedItem = {
+        instanceId: crypto.randomUUID(),
+        equipmentId: eq.id,
+        assignedFighterId: null,
+        slot: eq.defaultSlot,
+        purchaseCost: totalValueCost,
+        quantity: stackable ? qty : undefined,
+        customName: stashCustomName.trim() || undefined,
+      };
+      nextInventory = [...activeWarband.inventory, newItem];
+    }
 
     const newBalance = activeWarband.treasuryPennies - cost;
     await saveWarband({
       ...activeWarband,
       treasuryPennies: newBalance,
-      inventory: [...activeWarband.inventory, newItem],
+      inventory: nextInventory,
       treasuryLog:
         cost > 0
           ? [
@@ -145,7 +181,7 @@ export const DenAndStashView: React.FC = () => {
                 id: crypto.randomUUID(),
                 date: new Date().toISOString().slice(0, 10),
                 deltaPennies: -cost,
-                reason: `Bought ${eq.name} into Den Stash`,
+                reason: `Bought ${qty > 1 ? `${qty}x ` : ''}${eq.name} into Den Stash`,
                 balanceAfter: newBalance,
               },
               ...activeWarband.treasuryLog,
@@ -153,6 +189,7 @@ export const DenAndStashView: React.FC = () => {
           : activeWarband.treasuryLog,
     });
     setStashCustomName('');
+    setStashQuantity(1);
   };
 
   const handleEquipFromStash = async (instanceId: string, fighterId: string) => {
@@ -172,12 +209,36 @@ export const DenAndStashView: React.FC = () => {
       );
       if (!validation.valid) {
         alert(
-          `Cannot equip ${itemToMove.customName || eq.name} on ${targetFighter.name}: ${validation.reason}\n\n(Use the "Outfit Gear" modal on the Warband Roster tab if you wish to override equipment restrictions.)`
+          `Cannot equip ${formatItemDisplayName(itemToMove, eq)} on ${targetFighter.name}: ${validation.reason}\n\n(Use the "Outfit Gear" modal on the Warband Roster tab if you wish to override equipment restrictions.)`
         );
         return;
       }
       if (validation.suggestedSlot) {
         nextSlot = validation.suggestedSlot;
+      }
+
+      if (isEquipmentStackable(eq)) {
+        const existingOnFighter = activeWarband.inventory.find(
+          (i) =>
+            i.instanceId !== instanceId &&
+            i.assignedFighterId === fighterId &&
+            i.equipmentId === eq.id &&
+            !i.isConsumed
+        );
+        if (existingOnFighter) {
+          const mergedQty =
+            getItemQuantity(existingOnFighter) + getItemQuantity(itemToMove);
+          const mergedCost = existingOnFighter.purchaseCost + itemToMove.purchaseCost;
+          const updatedInv = activeWarband.inventory
+            .filter((i) => i.instanceId !== instanceId)
+            .map((i) =>
+              i.instanceId === existingOnFighter.instanceId
+                ? { ...i, quantity: mergedQty, purchaseCost: mergedCost }
+                : i
+            );
+          await saveWarband({ ...activeWarband, inventory: updatedInv });
+          return;
+        }
       }
     }
 
@@ -199,10 +260,11 @@ export const DenAndStashView: React.FC = () => {
       1,
       Math.floor(item.purchaseCost * (hasFence ? 0.75 : 0.5))
     );
+    const displayName = formatItemDisplayName(item, eq);
 
     if (
       !confirm(
-        `Sell ${item.customName || eq?.name} from your Den Stash for ${sellPrice} Pennies?`
+        `Sell ${displayName} from your Den Stash for ${sellPrice} Pennies?`
       )
     ) {
       return;
@@ -218,7 +280,7 @@ export const DenAndStashView: React.FC = () => {
           id: crypto.randomUUID(),
           date: new Date().toISOString().slice(0, 10),
           deltaPennies: sellPrice,
-          reason: `Sold ${item.customName || eq?.name} from Den Stash`,
+          reason: `Sold ${displayName} from Den Stash`,
           balanceAfter: newBalance,
         },
         ...activeWarband.treasuryLog,
@@ -472,7 +534,10 @@ export const DenAndStashView: React.FC = () => {
             </div>
             <select
               value={stashEqId}
-              onChange={(e) => setStashEqId(e.target.value)}
+              onChange={(e) => {
+                setStashEqId(e.target.value);
+                setStashQuantity(1);
+              }}
               className="w-full bg-stone-900 border border-stone-700 rounded-lg px-3 py-1.5 text-xs"
             >
               {sortedEquipment.map((eq) => (
@@ -481,6 +546,47 @@ export const DenAndStashView: React.FC = () => {
                 </option>
               ))}
             </select>
+            {(() => {
+              const selectedStashEq = rules.equipment.find((e) => e.id === stashEqId);
+              if (!selectedStashEq || !isEquipmentStackable(selectedStashEq)) return null;
+              return (
+                <div className="flex flex-wrap items-center justify-between gap-2 bg-emerald-950/30 border border-emerald-800/50 rounded-lg px-3 py-2 text-xs">
+                  <span className="text-emerald-300 font-semibold">
+                    Stackable Consumable (Total:{' '}
+                    {stashFree ? 0 : selectedStashEq.cost * stashQuantity}p)
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-stone-400">Qty:</span>
+                    <button
+                      type="button"
+                      onClick={() => setStashQuantity((q) => Math.max(1, q - 1))}
+                      className="px-2 py-0.5 rounded bg-stone-800 text-stone-200 font-bold cursor-pointer"
+                    >
+                      -
+                    </button>
+                    <input
+                      type="number"
+                      min={1}
+                      max={99}
+                      value={stashQuantity}
+                      onChange={(e) =>
+                        setStashQuantity(
+                          Math.max(1, Math.min(99, parseInt(e.target.value, 10) || 1))
+                        )
+                      }
+                      className="w-12 bg-stone-900 border border-stone-700 rounded px-1.5 py-0.5 text-center font-mono font-bold text-amber-300"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setStashQuantity((q) => Math.min(99, q + 1))}
+                      className="px-2 py-0.5 rounded bg-stone-800 text-stone-200 font-bold cursor-pointer"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
             <div className="flex flex-wrap items-center gap-2">
               <input
                 value={stashCustomName}
@@ -520,7 +626,7 @@ export const DenAndStashView: React.FC = () => {
                   >
                     <div>
                       <span className="font-bold text-stone-100">
-                        {item.customName || eq?.name}
+                        {formatItemDisplayName(item, eq)}
                       </span>{' '}
                       <span className="text-stone-400">
                         ({eq?.category} • Value {item.purchaseCost}p)

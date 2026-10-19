@@ -139,6 +139,7 @@ export interface EquipmentRef {
   isShield?: boolean; // Buckler, Light Shield, Heavy Shield, Shield of Attraction
   isBodyArmour?: boolean; // Light Armour, Heavy Armour, Very Heavy Armour, Armour of Ultimate Protection
   maxOnePerBand?: boolean; // Inspiring Object, Bagpipes
+  isStackable?: boolean; // True if any number of copies can be carried in a single Item/Special slot (e.g. Broadhead/Bodkin Arrows, Lead Slingshot, Superior Black Powder, Poisons)
   description: string;
 }
 
@@ -225,6 +226,7 @@ export interface EquippedOrStashedItem {
   assignedFighterId: string | null; // null = stored in Den Stash
   slot: EquipmentSlot;
   purchaseCost: number;
+  quantity?: number; // Stack count for stackable consumables (defaults to 1)
   customName?: string;
   isMasterSmithed?: boolean;
   isMalleusMaleficarum?: boolean;

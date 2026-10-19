@@ -4,8 +4,11 @@ import { useApp } from '../context/AppContext';
 import {
   computeFighterCombatBreakdown,
   computeFighterStats,
+  formatItemDisplayName,
   formatSigned,
   getFighterFatePoints,
+  getItemQuantity,
+  isEquipmentConsumable,
   MAX_FIGHTER_FATE_POINTS,
   StatKey,
 } from '../utils/gameMath';
@@ -21,6 +24,7 @@ import {
   CheckSquare,
   Square,
   RotateCcw,
+  Package,
 } from 'lucide-react';
 
 export type ModalInspectTab = StatKey | 'strong' | 'tough';
@@ -192,6 +196,29 @@ export const StatRollAndBreakdownModal: React.FC<StatRollAndBreakdownModalProps>
     if (!activeWarband || fighterFate <= 0 || !currentStat) return;
     await handleFighterFateDelta(-1);
     handleRollStat(false, true);
+  };
+
+  const handleConsumeEquippedItem = async (item: EquippedOrStashedItem) => {
+    if (!activeWarband) return;
+    const currentQty = getItemQuantity(item);
+    const nextQty = currentQty - 1;
+    if (nextQty <= 0) {
+      const updatedInv = activeWarband.inventory.filter(
+        (i) => i.instanceId !== item.instanceId
+      );
+      await saveWarband({ ...activeWarband, inventory: updatedInv });
+      return;
+    }
+    const nextPurchaseCost = Math.max(
+      0,
+      Math.round((item.purchaseCost * nextQty) / currentQty)
+    );
+    const updatedInv = activeWarband.inventory.map((i) =>
+      i.instanceId === item.instanceId
+        ? { ...i, quantity: nextQty, purchaseCost: nextPurchaseCost }
+        : i
+    );
+    await saveWarband({ ...activeWarband, inventory: updatedInv });
   };
 
   // Check if fighter has Natural Hunter (no Perfect +7 or Disastrous +1 Fate on Ranged rolls)
@@ -682,6 +709,52 @@ export const StatRollAndBreakdownModal: React.FC<StatRollAndBreakdownModalProps>
                   </div>
                 );
               })()}
+
+              {/* Equipped Ammunition & Consumables Quick-Spend Bar */}
+              {activeWarband &&
+                (() => {
+                  const fighterConsumables = warbandInventory.filter((i) => {
+                    if (i.assignedFighterId !== fighter.id || i.isConsumed) return false;
+                    const eq = rules.equipment.find((e) => e.id === i.equipmentId);
+                    return isEquipmentConsumable(eq);
+                  });
+                  if (fighterConsumables.length === 0) return null;
+
+                  return (
+                    <div className="pt-2 border-t border-stone-800/80 space-y-1.5">
+                      <div className="text-[11px] font-bold text-amber-300 flex items-center gap-1.5">
+                        <Package className="w-3.5 h-3.5 text-amber-400" />
+                        Equipped Ammunition &amp; Consumables (Tap to Spend 1):
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {fighterConsumables.map((cItem) => {
+                          const eq = rules.equipment.find(
+                            (e) => e.id === cItem.equipmentId
+                          );
+                          const qty = getItemQuantity(cItem);
+                          return (
+                            <button
+                              key={cItem.instanceId}
+                              type="button"
+                              onClick={() => handleConsumeEquippedItem(cItem)}
+                              title={
+                                qty > 1
+                                  ? `Spend 1 (${qty - 1} will remain in stack) — ${eq?.description || ''}`
+                                  : `Use & expend this consumable — ${eq?.description || ''}`
+                              }
+                              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-stone-950 hover:bg-amber-950/60 border border-amber-600/40 text-[11px] text-amber-200 font-semibold cursor-pointer transition"
+                            >
+                              <span>Spend 1: {formatItemDisplayName(cItem, eq)}</span>
+                              <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono font-bold text-[10px]">
+                                -1
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
             </div>
 
             {/* Active Modifiers Breakdown (Equipment, Skills, Wounds, Conditions) */}

@@ -107,6 +107,69 @@ export function getEffectiveEquipmentType(
   return 'Item';
 }
 
+const STACKABLE_EQUIPMENT_IDS = new Set([
+  'eq-broadhead-arrows',
+  'eq-bodkin-arrows',
+  'eq-lead-slingshot',
+  'eq-superior-black-powder',
+  'eq-pain-poison',
+  'eq-paralysing-poison',
+  'eq-mortal-poison',
+]);
+
+/**
+ * Returns true if any number of copies of `eq` can be carried in a single Item/Special slot
+ * (e.g. Broadhead Arrows, Bodkin Arrows, Lead Slingshot, Superior Black Powder, Poisons).
+ */
+export function isEquipmentStackable(eq?: EquipmentRef | null): boolean {
+  if (!eq) return false;
+  return Boolean(
+    eq.isStackable ||
+      STACKABLE_EQUIPMENT_IDS.has(eq.id) ||
+      /\/\s*Stack\)/i.test(eq.name) ||
+      /any number.*in (a single|1) Item/i.test(eq.description)
+  );
+}
+
+/**
+ * Returns true if `eq` is a consumable / single-use / stackable item or Magical Ingredient
+ * that can be expended during an active tabletop game.
+ */
+export function isEquipmentConsumable(eq?: EquipmentRef | null): boolean {
+  if (!eq) return false;
+  return Boolean(
+    isEquipmentStackable(eq) ||
+      eq.category === 'Potion & Consumable' ||
+      eq.category === 'Magical Ingredient'
+  );
+}
+
+/**
+ * Returns the current stack quantity of an inventory item (defaults to 1).
+ */
+export function getItemQuantity(item: EquippedOrStashedItem): number {
+  return Math.max(1, item.quantity ?? 1);
+}
+
+/**
+ * Formats an equipped or stashed item's display name, including its stack quantity (e.g. "Broadhead Arrows ×5").
+ */
+export function formatItemDisplayName(
+  item: EquippedOrStashedItem,
+  eq?: EquipmentRef | null
+): string {
+  const qty = getItemQuantity(item);
+  const rawBaseName = item.customName || eq?.name || 'Unknown Item';
+  const cleanBaseName =
+    !item.customName && (qty > 1 || isEquipmentStackable(eq))
+      ? rawBaseName.replace(/\s*\(1\s+[^)]*\/\s*Stack\)/i, '')
+      : rawBaseName;
+  if (qty > 1 || isEquipmentStackable(eq)) {
+    return `${cleanBaseName} ×${qty}`;
+  }
+  return cleanBaseName;
+}
+
 /**
  * How many roster Equipment Slots an item occupies for a given fighter.
  * Heavy & Very Heavy Armour take 2 Armour slots, unless the fighter has Born in Harness (1 slot).
@@ -341,6 +404,31 @@ export function findAvailableSlotForEquipment(
   const occ = getFighterSlotOccupancy(fighter, warbandInventory, rules);
   const validSlots = getValidSlotsForEquipment(eq, fighter, rules);
   const slotsReq = getEffectiveSlotsRequired(eq, fighter, rules);
+
+  // If stackable, check if fighter already carries a stack of this item
+  if (isEquipmentStackable(eq)) {
+    if (
+      preferredSlot &&
+      validSlots.includes(preferredSlot) &&
+      occ.slotMap[preferredSlot]?.equipmentId === eq.id
+    ) {
+      return preferredSlot;
+    }
+    for (const s of validSlots) {
+      if (occ.slotMap[s]?.equipmentId === eq.id) {
+        return s;
+      }
+    }
+    const existingAny = warbandInventory.find(
+      (i) =>
+        i.assignedFighterId === fighter.id &&
+        !i.isConsumed &&
+        i.equipmentId === eq.id
+    );
+    if (existingAny) {
+      return normalizeEquipmentSlot(existingAny.slot, eq);
+    }
+  }
 
   if (slotsReq === 2 && eqType === 'Armour') {
     if (occ.slotMap['Armour 1'] === null && occ.slotMap['Armour 2'] === null) {
@@ -693,6 +781,18 @@ export function validateEquipmentForFighter(
   }
 
   // 9. Slot Capacity & Type Validation (Page 98 & 105–106)
+  // If item is stackable (e.g. Broadhead/Bodkin Arrows, Lead Slingshot, Superior Black Powder, Poisons)
+  // and the fighter already carries a stack of it, adding to that stack uses 0 additional slots.
+  if (isEquipmentStackable(eq)) {
+    const existingStack = equippedItems.find((i) => i.equipmentId === eq.id);
+    if (existingStack) {
+      return {
+        valid: true,
+        suggestedSlot: normalizeEquipmentSlot(existingStack.slot, eq),
+      };
+    }
+  }
+
   const slotsReq = getEffectiveSlotsRequired(eq, fighter, rules);
   if (occ.usedMainSlots + slotsReq > occ.maxMainSlots) {
     return {

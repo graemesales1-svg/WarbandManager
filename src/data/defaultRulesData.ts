@@ -1811,6 +1811,7 @@ export const DEFAULT_RULES_DATASET: RulesDataset = {
       slotsRequired: 1,
       cost: 1,
       rarity: 'Common',
+      isStackable: true,
       weaponModifiers: '1p per arrow (any number in 1 Item slot) • Bow / War Bow: Shot counts as Strong (1)',
       description:
         'Wide, barbed arrowheads for Bow or War Bow. Any number of Broadhead Arrows may be carried in a single Item/Special slot. Declare before rolling: shot counts as having Strong (1) (1 arrow consumed per Shoot Action).',
@@ -1824,6 +1825,7 @@ export const DEFAULT_RULES_DATASET: RulesDataset = {
       slotsRequired: 1,
       cost: 1,
       rarity: 'Common',
+      isStackable: true,
       weaponModifiers:
         '1p per arrow (any number in 1 Item slot) • Bow / War Bow: Ignores up to 2 points of Armour Tough',
       description:
@@ -1838,6 +1840,7 @@ export const DEFAULT_RULES_DATASET: RulesDataset = {
       slotsRequired: 1,
       cost: 1,
       rarity: 'Common',
+      isStackable: true,
       weaponModifiers: '1p per shot (any number in 1 Item slot) • Sling: Adds Strong (1) to Shoot Action',
       description:
         'Cast lead bullets for a Sling. Any number may be carried in a single Item/Special slot. Declare before rolling: adds Strong (1) to the Sling Shoot Action (1 shot consumed).',
@@ -1851,6 +1854,7 @@ export const DEFAULT_RULES_DATASET: RulesDataset = {
       slotsRequired: 1,
       cost: 1,
       rarity: 'Common',
+      isStackable: true,
       weaponModifiers:
         '1p per shot (any number in 1 Item slot) • Black Powder weapons: Adds Strong (1) to Shoot Action',
       description:
@@ -2173,6 +2177,7 @@ export const DEFAULT_RULES_DATASET: RulesDataset = {
       cost: 2,
       postBattlePriceNote: 'd4p (Rarity 7 • Starting: 2p)',
       rarity: 'Rare (7+)',
+      isStackable: true,
       weaponModifiers:
         'Single Attack/Shoot Action (not Black Powder): If 1+ Wounds caused, target gains Stunned until end of Turn',
       description:
@@ -2188,6 +2193,7 @@ export const DEFAULT_RULES_DATASET: RulesDataset = {
       cost: 4,
       postBattlePriceNote: 'd6+3p (Rarity 7 • Starting: 4p)',
       rarity: 'Rare (7+)',
+      isStackable: true,
       weaponModifiers:
         'Single Attack/Shoot Action (not Black Powder): If 1+ Wounds caused, target gains Paralysed until end of Turn',
       description:
@@ -2203,6 +2209,7 @@ export const DEFAULT_RULES_DATASET: RulesDataset = {
       cost: 5,
       postBattlePriceNote: 'Rarity 7 (Starting: 5p)',
       rarity: 'Rare (7+)',
+      isStackable: true,
       weaponModifiers:
         'Single Attack/Shoot Action (not Black Powder): If 1+ Wounds caused, inflicts +6 additional Wounds ignoring Armour & Tough',
       description:

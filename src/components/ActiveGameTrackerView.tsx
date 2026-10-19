@@ -1,12 +1,20 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { Fighter, TabletopCondition } from '../types/game';
+import {
+  EquippedOrStashedItem,
+  Fighter,
+  TabletopCondition,
+} from '../types/game';
 import {
   computeFighterStats,
   computeFighterCombatBreakdown,
+  formatItemDisplayName,
   formatSigned,
   getFighterFatePoints,
+  getItemQuantity,
   getStartingFatePointsForRole,
+  isEquipmentConsumable,
+  isEquipmentStackable,
   MAX_FIGHTER_FATE_POINTS,
   StatKey,
 } from '../utils/gameMath';
@@ -22,6 +30,7 @@ import {
   Shield,
   Dices,
   RotateCcw,
+  Package,
 } from 'lucide-react';
 
 const ALL_CONDITIONS: TabletopCondition[] = [
@@ -106,6 +115,36 @@ export const ActiveGameTrackerView: React.FC = () => {
       f.id === fighter.id ? { ...f, conditions: nextConditions } : f
     );
     await saveWarband({ ...activeWarband, fighters: updatedFighters });
+  };
+
+  const handleAdjustConsumable = async (
+    item: EquippedOrStashedItem,
+    delta: number
+  ) => {
+    const eq = rules.equipment.find((e) => e.id === item.equipmentId);
+    const currentQty = getItemQuantity(item);
+    const nextQty = currentQty + delta;
+
+    if (nextQty <= 0) {
+      const updatedInv = activeWarband.inventory.filter(
+        (i) => i.instanceId !== item.instanceId
+      );
+      await saveWarband({ ...activeWarband, inventory: updatedInv });
+      return;
+    }
+
+    const unitCost = eq?.cost ?? 0;
+    const nextPurchaseCost =
+      delta > 0
+        ? item.purchaseCost + unitCost * delta
+        : Math.max(0, Math.round((item.purchaseCost * nextQty) / currentQty));
+
+    const updatedInv = activeWarband.inventory.map((i) =>
+      i.instanceId === item.instanceId
+        ? { ...i, quantity: nextQty, purchaseCost: nextPurchaseCost }
+        : i
+    );
+    await saveWarband({ ...activeWarband, inventory: updatedInv });
   };
 
   const handleNextRound = async () => {
@@ -507,7 +546,7 @@ export const ActiveGameTrackerView: React.FC = () => {
               </div>
 
               {/* Weapons & Skills Quick Reference */}
-              <div className="text-xs space-y-1 bg-stone-950/60 p-2.5 rounded-xl border border-stone-800/70">
+              <div className="text-xs space-y-1.5 bg-stone-950/60 p-2.5 rounded-xl border border-stone-800/70">
                 <div>
                   <Sword className="w-3.5 h-3.5 inline text-amber-400 mr-1" />
                   <strong className="text-stone-300">Gear: </strong>
@@ -518,12 +557,75 @@ export const ActiveGameTrackerView: React.FC = () => {
                           const eq = rules.equipment.find(
                             (e) => e.id === i.equipmentId
                           );
-                          return `${i.customName || eq?.name}${
+                          return `${formatItemDisplayName(i, eq)}${
                             eq?.weaponModifiers ? ` (${eq.weaponModifiers})` : ''
                           }`;
                         })
                         .join(' • ')}
                 </div>
+
+                {/* Interactive Consumables & Ammunition Tracker (Arrows, Shot, Powder, Potions, Poisons, Ingredients) */}
+                {(() => {
+                  const equippedConsumables = equipped.filter((i) => {
+                    const eq = rules.equipment.find((e) => e.id === i.equipmentId);
+                    return isEquipmentConsumable(eq);
+                  });
+                  if (equippedConsumables.length === 0) return null;
+
+                  return (
+                    <div className="pt-1.5 mt-1 border-t border-stone-800/80 space-y-1.5">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-bold text-amber-300 flex items-center gap-1">
+                          <Package className="w-3.5 h-3.5 text-amber-400" />
+                          Consumables &amp; Ammunition (Tap to Use / Spend)
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {equippedConsumables.map((cItem) => {
+                          const eq = rules.equipment.find(
+                            (e) => e.id === cItem.equipmentId
+                          );
+                          const qty = getItemQuantity(cItem);
+                          const stackable = isEquipmentStackable(eq);
+                          return (
+                            <div
+                              key={cItem.instanceId}
+                              title={eq?.description}
+                              className="flex items-center gap-1.5 bg-stone-900 border border-amber-700/40 rounded-lg px-2 py-1 text-[11px]"
+                            >
+                              <span className="font-semibold text-amber-200">
+                                {formatItemDisplayName(cItem, eq)}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleAdjustConsumable(cItem, -1)}
+                                className="px-2 py-0.5 rounded bg-amber-600 hover:bg-amber-500 text-stone-950 font-bold text-[10px] cursor-pointer transition"
+                                title={
+                                  qty > 1
+                                    ? `Spend 1 (${qty - 1} will remain in slot)`
+                                    : 'Use & expend this consumable (removes from slot)'
+                                }
+                              >
+                                {qty > 1 ? 'Use 1 (-1)' : 'Consume'}
+                              </button>
+                              {stackable && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleAdjustConsumable(cItem, 1)}
+                                  className="px-1.5 py-0.5 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 font-bold text-[10px] cursor-pointer"
+                                  title="Add +1 back to stack"
+                                >
+                                  +1
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 <div>
                   <Sparkles className="w-3.5 h-3.5 inline text-emerald-400 mr-1" />
                   <strong className="text-stone-300">Skills/Spells: </strong>

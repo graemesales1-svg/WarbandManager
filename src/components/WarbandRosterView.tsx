@@ -18,14 +18,17 @@ import {
   computeFighterStats,
   computeFighterCombatBreakdown,
   findAvailableSlotForEquipment,
+  formatItemDisplayName,
   formatSigned,
   getEarnedAdvancesCount,
   getEffectiveSlotsRequired,
   getFighterFatePoints,
   getFighterSlotOccupancy,
+  getItemQuantity,
   getNextXpThreshold,
   getStartingFatePointsForRole,
   getValidSlotsForEquipment,
+  isEquipmentStackable,
   MAX_FIGHTER_FATE_POINTS,
   StatKey,
   stepDie,
@@ -292,6 +295,7 @@ export const WarbandRosterView: React.FC = () => {
   const [buySlot, setBuySlot] = useState<EquipmentSlot>(
     sortedEquipment[0]?.defaultSlot || 'Weapon 1'
   );
+  const [buyQuantity, setBuyQuantity] = useState(1);
   const [buyCustomName, setBuyCustomName] = useState('');
   const [freeGrant, setFreeGrant] = useState(false);
   const [overrideGearRestrictions, setOverrideGearRestrictions] = useState(false);
@@ -722,6 +726,9 @@ export const WarbandRosterView: React.FC = () => {
     const eq = rules.equipment.find((x) => x.id === buyEqId);
     if (!eq) return;
 
+    const stackable = isEquipmentStackable(eq);
+    const qty = stackable ? Math.max(1, Math.min(99, buyQuantity || 1)) : 1;
+
     const validation = validateEquipmentForFighter(
       eq,
       selectedFighterForGear,
@@ -736,9 +743,12 @@ export const WarbandRosterView: React.FC = () => {
       return;
     }
 
-    const cost = freeGrant ? 0 : eq.cost;
-    if (cost > activeWarband.treasuryPennies) {
-      alert(`Insufficient Pennies (${activeWarband.treasuryPennies}p in Treasury, ${cost}p needed).`);
+    const totalValueCost = eq.cost * qty;
+    const treasuryCost = freeGrant ? 0 : totalValueCost;
+    if (treasuryCost > activeWarband.treasuryPennies) {
+      alert(
+        `Insufficient Pennies (${activeWarband.treasuryPennies}p in Treasury, ${treasuryCost}p needed for ${qty}x ${eq.name}).`
+      );
       return;
     }
 
@@ -747,28 +757,55 @@ export const WarbandRosterView: React.FC = () => {
         ? validation.suggestedSlot
         : buySlot;
 
-    const newItem: EquippedOrStashedItem = {
-      instanceId: crypto.randomUUID(),
-      equipmentId: eq.id,
-      assignedFighterId: selectedFighterForGear.id,
-      slot: assignedSlot,
-      purchaseCost: eq.cost,
-      customName: buyCustomName.trim() || undefined,
-    };
+    // Check if fighter already carries a stack of this stackable item
+    const existingStack = stackable
+      ? activeWarband.inventory.find(
+          (i) =>
+            i.assignedFighterId === selectedFighterForGear.id &&
+            i.equipmentId === eq.id &&
+            !i.isConsumed
+        )
+      : undefined;
 
-    const newBalance = activeWarband.treasuryPennies - cost;
+    let nextInventory: EquippedOrStashedItem[];
+    if (existingStack) {
+      const nextQty = getItemQuantity(existingStack) + qty;
+      nextInventory = activeWarband.inventory.map((i) =>
+        i.instanceId === existingStack.instanceId
+          ? {
+              ...i,
+              quantity: nextQty,
+              purchaseCost: i.purchaseCost + totalValueCost,
+              customName: buyCustomName.trim() || i.customName,
+            }
+          : i
+      );
+    } else {
+      const newItem: EquippedOrStashedItem = {
+        instanceId: crypto.randomUUID(),
+        equipmentId: eq.id,
+        assignedFighterId: selectedFighterForGear.id,
+        slot: assignedSlot,
+        purchaseCost: totalValueCost,
+        quantity: stackable ? qty : undefined,
+        customName: buyCustomName.trim() || undefined,
+      };
+      nextInventory = [...activeWarband.inventory, newItem];
+    }
+
+    const newBalance = activeWarband.treasuryPennies - treasuryCost;
     await saveWarband({
       ...activeWarband,
       treasuryPennies: newBalance,
-      inventory: [...activeWarband.inventory, newItem],
+      inventory: nextInventory,
       treasuryLog:
-        cost > 0
+        treasuryCost > 0
           ? [
               {
                 id: crypto.randomUUID(),
                 date: new Date().toISOString().slice(0, 10),
-                deltaPennies: -cost,
-                reason: `Purchased ${eq.name} for ${selectedFighterForGear.name}`,
+                deltaPennies: -treasuryCost,
+                reason: `Purchased ${qty > 1 ? `${qty}x ` : ''}${eq.name} for ${selectedFighterForGear.name}`,
                 balanceAfter: newBalance,
               },
               ...activeWarband.treasuryLog,
@@ -776,17 +813,79 @@ export const WarbandRosterView: React.FC = () => {
           : activeWarband.treasuryLog,
     });
     setBuyCustomName('');
+    setBuyQuantity(1);
+  };
+
+  const handleAdjustStackQuantity = async (
+    item: EquippedOrStashedItem,
+    delta: number,
+    deductFromTreasury: boolean
+  ) => {
+    const eq = rules.equipment.find((e) => e.id === item.equipmentId);
+    if (!eq) return;
+    const currentQty = getItemQuantity(item);
+    const nextQty = currentQty + delta;
+
+    if (nextQty <= 0) {
+      // Remove stack completely
+      const updatedInv = activeWarband.inventory.filter(
+        (i) => i.instanceId !== item.instanceId
+      );
+      await saveWarband({ ...activeWarband, inventory: updatedInv });
+      return;
+    }
+
+    const unitCost = eq.cost;
+    const treasuryCost = delta > 0 && deductFromTreasury ? unitCost * delta : 0;
+    if (treasuryCost > activeWarband.treasuryPennies) {
+      alert(
+        `Insufficient Pennies (${activeWarband.treasuryPennies}p in Treasury, ${treasuryCost}p needed).`
+      );
+      return;
+    }
+
+    const nextPurchaseCost =
+      delta > 0
+        ? item.purchaseCost + unitCost * delta
+        : Math.max(0, Math.round((item.purchaseCost * nextQty) / currentQty));
+
+    const updatedInv = activeWarband.inventory.map((i) =>
+      i.instanceId === item.instanceId
+        ? { ...i, quantity: nextQty, purchaseCost: nextPurchaseCost }
+        : i
+    );
+    const newBalance = activeWarband.treasuryPennies - treasuryCost;
+
+    await saveWarband({
+      ...activeWarband,
+      treasuryPennies: newBalance,
+      inventory: updatedInv,
+      treasuryLog:
+        treasuryCost > 0
+          ? [
+              {
+                id: crypto.randomUUID(),
+                date: new Date().toISOString().slice(0, 10),
+                deltaPennies: -treasuryCost,
+                reason: `Purchased +${delta} ${eq.name}`,
+                balanceAfter: newBalance,
+              },
+              ...activeWarband.treasuryLog,
+            ]
+          : activeWarband.treasuryLog,
+    });
   };
 
   const handleMoveItem = async (instanceId: string, targetFighterId: string | null) => {
     const itemToMove = activeWarband.inventory.find((i) => i.instanceId === instanceId);
     if (!itemToMove) return;
 
+    const eq = rules.equipment.find((e) => e.id === itemToMove.equipmentId);
+    const stackable = isEquipmentStackable(eq);
     let nextSlot: EquipmentSlot = itemToMove.slot;
 
     if (targetFighterId !== null) {
       const targetFighter = activeWarband.fighters.find((f) => f.id === targetFighterId);
-      const eq = rules.equipment.find((e) => e.id === itemToMove.equipmentId);
       if (targetFighter && eq) {
         const validation = validateEquipmentForFighter(
           eq,
@@ -803,6 +902,56 @@ export const WarbandRosterView: React.FC = () => {
         if (validation.suggestedSlot) {
           nextSlot = validation.suggestedSlot;
         }
+
+        // If stackable and target fighter already has a stack of this item, merge into existing stack
+        if (stackable) {
+          const existingOnFighter = activeWarband.inventory.find(
+            (i) =>
+              i.instanceId !== instanceId &&
+              i.assignedFighterId === targetFighterId &&
+              i.equipmentId === eq.id &&
+              !i.isConsumed
+          );
+          if (existingOnFighter) {
+            const mergedQty =
+              getItemQuantity(existingOnFighter) + getItemQuantity(itemToMove);
+            const mergedCost = existingOnFighter.purchaseCost + itemToMove.purchaseCost;
+            const updatedInv = activeWarband.inventory
+              .filter((i) => i.instanceId !== instanceId)
+              .map((i) =>
+                i.instanceId === existingOnFighter.instanceId
+                  ? { ...i, quantity: mergedQty, purchaseCost: mergedCost }
+                  : i
+              );
+            await saveWarband({ ...activeWarband, inventory: updatedInv });
+            return;
+          }
+        }
+      }
+    } else if (stackable && eq) {
+      // Moving to Den Stash: merge with an existing stashed stack of the same item if present
+      const existingInStash = activeWarband.inventory.find(
+        (i) =>
+          i.instanceId !== instanceId &&
+          i.assignedFighterId === null &&
+          i.equipmentId === eq.id &&
+          !i.isConsumed &&
+          !i.customName &&
+          !itemToMove.customName
+      );
+      if (existingInStash) {
+        const mergedQty =
+          getItemQuantity(existingInStash) + getItemQuantity(itemToMove);
+        const mergedCost = existingInStash.purchaseCost + itemToMove.purchaseCost;
+        const updatedInv = activeWarband.inventory
+          .filter((i) => i.instanceId !== instanceId)
+          .map((i) =>
+            i.instanceId === existingInStash.instanceId
+              ? { ...i, quantity: mergedQty, purchaseCost: mergedCost }
+              : i
+          );
+        await saveWarband({ ...activeWarband, inventory: updatedInv });
+        return;
       }
     }
 
@@ -1632,11 +1781,11 @@ export const WarbandRosterView: React.FC = () => {
                         return (
                           <li
                             key={item.instanceId}
-                            className="flex items-center justify-between text-stone-200"
+                            className="flex items-center justify-between text-stone-200 gap-2"
                           >
                             <span>
                               <strong className="text-amber-200/90">
-                                {item.customName || eqRef?.name}
+                                {formatItemDisplayName(item, eqRef)}
                               </strong>{' '}
                               <span className="text-stone-500 text-[11px]">
                                 ({item.slot}
@@ -1645,7 +1794,7 @@ export const WarbandRosterView: React.FC = () => {
                             </span>
                             <button
                               onClick={() => handleMoveItem(item.instanceId, null)}
-                              className="text-[10px] px-1.5 py-0.5 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 cursor-pointer"
+                              className="text-[10px] px-1.5 py-0.5 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 cursor-pointer shrink-0"
                               title="Send to Den Stash"
                             >
                               Stash
@@ -2485,6 +2634,8 @@ export const WarbandRosterView: React.FC = () => {
                       const eq = item
                         ? rules.equipment.find((e) => e.id === item.equipmentId)
                         : undefined;
+                      const stackable = isEquipmentStackable(eq);
+                      const qty = item ? getItemQuantity(item) : 1;
                       const isSecondarySlotOfMultiSlotItem =
                         slotName === 'Armour 2' &&
                         gearSlotOcc.twoSlotArmourItem !== null &&
@@ -2506,10 +2657,15 @@ export const WarbandRosterView: React.FC = () => {
                                   (2nd Armour Slot)
                                 </span>
                               )}
+                              {item && stackable && (
+                                <span className="ml-1.5 text-emerald-400 font-semibold">
+                                  • Stack ({qty} carried)
+                                </span>
+                              )}
                             </div>
                             {item ? (
                               <div className="font-semibold text-amber-200 truncate">
-                                {item.customName || eq?.name}
+                                {formatItemDisplayName(item, eq)}
                                 {isSecondarySlotOfMultiSlotItem
                                   ? ' (Heavy/Very Heavy Armour)'
                                   : ''}
@@ -2519,13 +2675,46 @@ export const WarbandRosterView: React.FC = () => {
                             )}
                           </div>
                           {item && !isSecondarySlotOfMultiSlotItem && (
-                            <button
-                              type="button"
-                              onClick={() => handleMoveItem(item.instanceId, null)}
-                              className="px-2 py-1 rounded bg-stone-800 hover:bg-stone-700 text-stone-200 text-[11px] shrink-0 cursor-pointer"
-                            >
-                              Unequip
-                            </button>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {stackable && (
+                                <div className="flex items-center gap-1 bg-stone-900 border border-stone-700 rounded-lg px-1.5 py-0.5">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleAdjustStackQuantity(item, -1, false)
+                                    }
+                                    title="Remove/consume 1 from stack"
+                                    className="px-1 text-stone-300 hover:text-red-300 font-bold cursor-pointer"
+                                  >
+                                    -1
+                                  </button>
+                                  <span className="text-[11px] font-mono font-bold text-amber-300 px-0.5">
+                                    ×{qty}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleAdjustStackQuantity(item, 1, !freeGrant)
+                                    }
+                                    title={
+                                      freeGrant
+                                        ? 'Add +1 to stack (Free)'
+                                        : `Buy +1 for stack (${eq?.cost ?? 0}p)`
+                                    }
+                                    className="px-1 text-emerald-300 hover:text-emerald-200 font-bold cursor-pointer"
+                                  >
+                                    +1
+                                  </button>
+                                </div>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleMoveItem(item.instanceId, null)}
+                                className="px-2 py-1 rounded bg-stone-800 hover:bg-stone-700 text-stone-200 text-[11px] shrink-0 cursor-pointer"
+                              >
+                                Unequip
+                              </button>
+                            </div>
                           )}
                         </div>
                       );
@@ -2562,7 +2751,7 @@ export const WarbandRosterView: React.FC = () => {
                                     key={pItem.instanceId}
                                     className="flex items-center justify-between text-[11px] text-stone-200"
                                   >
-                                    <span>{pItem.customName || eq?.name}</span>
+                                    <span>{formatItemDisplayName(pItem, eq)}</span>
                                     <button
                                       type="button"
                                       onClick={() =>
@@ -2595,7 +2784,7 @@ export const WarbandRosterView: React.FC = () => {
                                   key={uItem.instanceId}
                                   className="flex items-center justify-between text-[11px] text-stone-200"
                                 >
-                                  <span>{uItem.customName || eq?.name}</span>
+                                  <span>{formatItemDisplayName(uItem, eq)}</span>
                                   <button
                                     type="button"
                                     onClick={() => handleMoveItem(uItem.instanceId, null)}
@@ -2641,7 +2830,7 @@ export const WarbandRosterView: React.FC = () => {
                           >
                             <div className="min-w-0">
                               <div className="font-semibold text-stone-200 truncate">
-                                {stashed.customName || eq?.name}
+                                {formatItemDisplayName(stashed, eq)}
                               </div>
                               <div className="text-[11px] text-stone-400">
                                 {check.valid
@@ -2685,6 +2874,7 @@ export const WarbandRosterView: React.FC = () => {
                         onChange={(e) => {
                           const nextId = e.target.value;
                           setBuyEqId(nextId);
+                          setBuyQuantity(1);
                           const found = rules.equipment.find((x) => x.id === nextId);
                           if (found) {
                             const suggested = findAvailableSlotForEquipment(
@@ -2738,6 +2928,66 @@ export const WarbandRosterView: React.FC = () => {
                     </div>
                   </div>
 
+                  {/* Stackable Quantity Selector (for Arrows, Slingshot, Black Powder, Poison Vials) */}
+                  {selectedBuyEq && isEquipmentStackable(selectedBuyEq) && (
+                    <div className="bg-emerald-950/30 border border-emerald-700/50 rounded-xl px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-3">
+                      <div className="text-xs">
+                        <div className="font-bold text-emerald-300">
+                          Stackable Consumable — All copies share 1 {buySlot} slot
+                        </div>
+                        <div className="text-[11px] text-stone-400">
+                          Unit cost: {selectedBuyEq.cost}p each • Total for {buyQuantity}:{' '}
+                          <strong className="text-amber-300">
+                            {freeGrant ? 0 : selectedBuyEq.cost * buyQuantity}p
+                          </strong>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-stone-300 mr-1">Quantity:</span>
+                        <button
+                          type="button"
+                          onClick={() => setBuyQuantity((q) => Math.max(1, q - 1))}
+                          className="px-2 py-1 rounded bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-bold cursor-pointer"
+                        >
+                          -
+                        </button>
+                        <input
+                          type="number"
+                          min={1}
+                          max={99}
+                          value={buyQuantity}
+                          onChange={(e) =>
+                            setBuyQuantity(
+                              Math.max(1, Math.min(99, parseInt(e.target.value, 10) || 1))
+                            )
+                          }
+                          className="w-14 bg-stone-900 border border-stone-700 rounded-lg px-2 py-1 text-center text-xs font-mono font-bold text-amber-300"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setBuyQuantity((q) => Math.min(99, q + 1))}
+                          className="px-2 py-1 rounded bg-stone-800 hover:bg-stone-700 text-stone-200 text-xs font-bold cursor-pointer"
+                        >
+                          +
+                        </button>
+                        {[3, 5, 10].map((preset) => (
+                          <button
+                            key={preset}
+                            type="button"
+                            onClick={() => setBuyQuantity(preset)}
+                            className={`px-2 py-1 rounded text-[11px] font-mono font-bold cursor-pointer ${
+                              buyQuantity === preset
+                                ? 'bg-emerald-600 text-stone-950'
+                                : 'bg-stone-900 hover:bg-stone-800 text-stone-300 border border-stone-700'
+                            }`}
+                          >
+                            ×{preset}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {selectedBuyEq && (
                     <div className="bg-stone-900/80 border border-stone-800 rounded-lg px-3 py-2 text-[11px] text-stone-300 space-y-0.5">
                       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -2781,6 +3031,9 @@ export const WarbandRosterView: React.FC = () => {
                       className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-stone-950 font-bold text-xs cursor-pointer shrink-0"
                     >
                       Buy &amp; Equip
+                      {selectedBuyEq && isEquipmentStackable(selectedBuyEq) && buyQuantity > 1
+                        ? ` (×${buyQuantity} — ${freeGrant ? 0 : selectedBuyEq.cost * buyQuantity}p)`
+                        : ''}
                     </button>
                   </div>
                 </form>

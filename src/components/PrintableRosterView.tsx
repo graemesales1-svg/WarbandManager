@@ -4,6 +4,7 @@ import {
   calculateWarbandRating,
   computeFighterStats,
   computeFighterCombatBreakdown,
+  formatItemDisplayName,
   formatSigned,
   getFighterFatePoints,
   getStartingFatePointsForRole,
@@ -214,7 +215,7 @@ export const PrintableRosterView: React.FC = () => {
                               const eq = rules.equipment.find(
                                 (e) => e.id === i.equipmentId
                               );
-                              return `${i.customName || eq?.name} (${i.slot})`;
+                              return `${formatItemDisplayName(i, eq)} (${i.slot})`;
                             })
                             .join(', ') || 'None'}
                         </div>
@@ -261,7 +262,7 @@ export const PrintableRosterView: React.FC = () => {
                   {stashedItems
                     .map((i) => {
                       const eq = rules.equipment.find((e) => e.id === i.equipmentId);
-                      return `${i.customName || eq?.name} (${i.purchaseCost}p)`;
+                      return `${formatItemDisplayName(i, eq)} (${i.purchaseCost}p)`;
                     })
                     .join(', ') || 'Empty'}
                 </p>
@@ -340,7 +341,7 @@ export const PrintableRosterView: React.FC = () => {
                           const eq = rules.equipment.find(
                             (e) => e.id === i.equipmentId
                           );
-                          return `${i.customName || eq?.name}${
+                          return `${formatItemDisplayName(i, eq)}${
                             eq?.weaponModifiers ? ` [${eq.weaponModifiers}]` : ''
                           }`;
                         })
