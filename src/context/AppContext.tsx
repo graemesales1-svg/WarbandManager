@@ -314,10 +314,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       );
       return;
     }
+    const redirectUrl = `${window.location.origin}${window.location.pathname}`;
     await client.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: window.location.origin,
+        redirectTo: redirectUrl,
       },
     });
   };
@@ -347,6 +348,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!client) {
       return { error: 'Supabase Cloud is not configured yet. Add your URL and Anon Key below first.' };
     }
+    const redirectUrl = `${window.location.origin}${window.location.pathname}`;
     const { data, error } = await client.auth.signUp({
       email: email.trim(),
       password,
@@ -354,7 +356,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         data: {
           full_name: displayName?.trim() || email.split('@')[0],
         },
-        emailRedirectTo: window.location.origin,
+        emailRedirectTo: redirectUrl,
       },
     });
     if (error) return { error: error.message };
@@ -367,10 +369,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!client) {
       return { error: 'Supabase Cloud is not configured yet. Add your URL and Anon Key below first.' };
     }
+    const redirectUrl = `${window.location.origin}${window.location.pathname}`;
     const { error } = await client.auth.signInWithOtp({
       email: email.trim(),
       options: {
-        emailRedirectTo: window.location.origin,
+        emailRedirectTo: redirectUrl,
       },
     });
     if (error) return { error: error.message };

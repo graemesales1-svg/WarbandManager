@@ -1,7 +1,12 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-const envUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+const DEFAULT_SUPABASE_URL = 'https://kcstwlnkjskawgzilere.supabase.co';
+const DEFAULT_SUPABASE_ANON_KEY =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imtjc3R3bG5ranNrYXdnemlsZXJlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI0MzA4ODgsImV4cCI6MjEwODAwNjg4OH0.0HFAQKhN92-DzutdsY-IPXgkvnlBK4Tw1LqQD6umUmI';
+
+const envUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined) || DEFAULT_SUPABASE_URL;
+const envKey =
+  (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) || DEFAULT_SUPABASE_ANON_KEY;
 
 const STORAGE_SUPABASE_CONFIG_KEY = 'bb2_supabase_runtime_config';
 
@@ -10,12 +15,24 @@ export interface RuntimeSupabaseConfig {
   anonKey: string;
 }
 
+export function normalizeSupabaseUrl(rawUrl: string): string {
+  return rawUrl
+    .trim()
+    .replace(/\/rest\/v1\/?$/i, '')
+    .replace(/\/+$/, '');
+}
+
 export function getSavedSupabaseConfig(): RuntimeSupabaseConfig | null {
   try {
     const raw = localStorage.getItem(STORAGE_SUPABASE_CONFIG_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as RuntimeSupabaseConfig;
-      if (parsed.url && parsed.anonKey) return parsed;
+      if (parsed.url && parsed.anonKey) {
+        return {
+          url: normalizeSupabaseUrl(parsed.url),
+          anonKey: parsed.anonKey.trim(),
+        };
+      }
     }
   } catch {
     // ignore storage errors
@@ -26,7 +43,7 @@ export function getSavedSupabaseConfig(): RuntimeSupabaseConfig | null {
     !envUrl.includes('your-project-id') &&
     !envKey.includes('your-supabase-anon')
   ) {
-    return { url: envUrl, anonKey: envKey };
+    return { url: normalizeSupabaseUrl(envUrl), anonKey: envKey.trim() };
   }
   return null;
 }
@@ -37,7 +54,10 @@ export function saveRuntimeSupabaseConfig(config: RuntimeSupabaseConfig | null):
   } else {
     localStorage.setItem(
       STORAGE_SUPABASE_CONFIG_KEY,
-      JSON.stringify({ url: config.url.trim(), anonKey: config.anonKey.trim() })
+      JSON.stringify({
+        url: normalizeSupabaseUrl(config.url),
+        anonKey: config.anonKey.trim(),
+      })
     );
   }
 }
@@ -59,3 +79,4 @@ export function getSupabaseClient(): SupabaseClient | null {
     return null;
   }
 }
+
