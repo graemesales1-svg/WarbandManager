@@ -58,6 +58,8 @@ import {
   Plus,
   Minus,
   Award,
+  Pencil,
+  Check,
   X,
 } from 'lucide-react';
 
@@ -325,6 +327,19 @@ export const WarbandRosterView: React.FC = () => {
     fighterId: string;
     skillOrSpellId: string;
   } | null>(null);
+
+  // Item Custom Name Editing State
+  const [renamingItemId, setRenamingItemId] = useState<string | null>(null);
+  const [renameItemText, setRenameItemText] = useState('');
+
+  // Den Name Editing State
+  const [isEditingDenName, setIsEditingDenName] = useState(false);
+  const [denNameInput, setDenNameInput] = useState('');
+
+  // Dismiss Beast Modal State
+  const [fighterToDismiss, setFighterToDismiss] = useState<Fighter | null>(null);
+  const [refundDismissedBeast, setRefundDismissedBeast] = useState(true);
+  const [refundGearWithBeast, setRefundGearWithBeast] = useState(true);
 
   if (!activeWarband) {
     return (
@@ -927,23 +942,117 @@ export const WarbandRosterView: React.FC = () => {
     await saveWarband({ ...activeWarband, fighters: updatedFighters });
   };
 
-  const handleDeleteFighter = async (fighter: Fighter) => {
-    if (
-      !confirm(
-        `Remove ${fighter.name} from the roster? Any equipped items will be returned to your Den Stash.`
-      )
-    ) {
-      return;
-    }
-    const updatedInventory = activeWarband.inventory.map((item) =>
-      item.assignedFighterId === fighter.id ? { ...item, assignedFighterId: null } : item
+  const openDismissFighterModal = (fighter: Fighter) => {
+    setFighterToDismiss(fighter);
+    setRefundDismissedBeast(true);
+    setRefundGearWithBeast(true);
+  };
+
+  const handleConfirmDismissFighter = async () => {
+    if (!fighterToDismiss) return;
+    const fighter = fighterToDismiss;
+    const equippedItems = activeWarband.inventory.filter(
+      (item) => item.assignedFighterId === fighter.id
     );
+    const gearValue = equippedItems.reduce((sum, i) => sum + i.purchaseCost, 0);
+    const totalAccumulatedValue = fighter.recruitmentCost + gearValue;
+
+    let refundAmount = 0;
+    let updatedInventory: EquippedOrStashedItem[];
+
+    if (refundDismissedBeast) {
+      if (refundGearWithBeast || equippedItems.length === 0) {
+        refundAmount = totalAccumulatedValue;
+        // Remove equipped items since their full value is refunded
+        updatedInventory = activeWarband.inventory.filter(
+          (item) => item.assignedFighterId !== fighter.id
+        );
+      } else {
+        refundAmount = fighter.recruitmentCost;
+        // Return equipped items to Den Stash
+        updatedInventory = activeWarband.inventory.map((item) =>
+          item.assignedFighterId === fighter.id
+            ? { ...item, assignedFighterId: null }
+            : item
+        );
+      }
+    } else {
+      refundAmount = 0;
+      updatedInventory = activeWarband.inventory.map((item) =>
+        item.assignedFighterId === fighter.id
+          ? { ...item, assignedFighterId: null }
+          : item
+      );
+    }
+
     const updatedFighters = activeWarband.fighters.filter((f) => f.id !== fighter.id);
+    const newBalance = activeWarband.treasuryPennies + refundAmount;
+
     await saveWarband({
       ...activeWarband,
+      treasuryPennies: newBalance,
       fighters: updatedFighters,
       inventory: updatedInventory,
+      treasuryLog:
+        refundAmount > 0
+          ? [
+              {
+                id: crypto.randomUUID(),
+                date: new Date().toISOString().slice(0, 10),
+                deltaPennies: refundAmount,
+                reason:
+                  refundGearWithBeast && gearValue > 0
+                    ? `Dismissed ${fighter.name} (${fighter.role}) — Refunded accumulated value (${fighter.recruitmentCost}p beast + ${gearValue}p gear)`
+                    : `Dismissed ${fighter.name} (${fighter.role}) — Refunded recruitment cost`,
+                balanceAfter: newBalance,
+              },
+              ...activeWarband.treasuryLog,
+            ]
+          : activeWarband.treasuryLog,
     });
+
+    setFighterToDismiss(null);
+  };
+
+  const handleStartRenameItem = (item: EquippedOrStashedItem) => {
+    setRenamingItemId(item.instanceId);
+    setRenameItemText(item.customName || '');
+  };
+
+  const handleSaveItemCustomName = async (
+    instanceId: string,
+    overrideName?: string
+  ) => {
+    const trimmed = (
+      overrideName !== undefined ? overrideName : renameItemText
+    ).trim();
+    const updatedInventory = activeWarband.inventory.map((item) =>
+      item.instanceId === instanceId
+        ? { ...item, customName: trimmed || undefined }
+        : item
+    );
+    await saveWarband({
+      ...activeWarband,
+      inventory: updatedInventory,
+    });
+    setRenamingItemId(null);
+    setRenameItemText('');
+  };
+
+  const handleStartEditDenName = () => {
+    setDenNameInput(activeWarband.denName);
+    setIsEditingDenName(true);
+  };
+
+  const handleSaveDenName = async () => {
+    const trimmed = denNameInput.trim();
+    if (trimmed) {
+      await saveWarband({
+        ...activeWarband,
+        denName: trimmed,
+      });
+    }
+    setIsEditingDenName(false);
   };
 
   // Buy & Equip Directly to Fighter
@@ -1534,12 +1643,58 @@ export const WarbandRosterView: React.FC = () => {
                 &ldquo;{activeWarband.motto}&rdquo;
               </p>
             )}
-            <p className="text-xs text-stone-300 mt-2 max-w-2xl">
-              <strong className="text-stone-400">Starting Den:</strong> {activeWarband.denName} (
-              {activeWarband.denType}) •{' '}
-              <strong className="text-stone-400">2.0 Allegiance Rules:</strong>{' '}
-              {allegiance?.specialRules}
-            </p>
+            <div className="text-xs text-stone-300 mt-2 max-w-2xl flex flex-wrap items-center gap-1.5">
+              <strong className="text-stone-400">Starting Den:</strong>
+              {isEditingDenName ? (
+                <span className="inline-flex items-center gap-1">
+                  <input
+                    type="text"
+                    value={denNameInput}
+                    onChange={(e) => setDenNameInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleSaveDenName();
+                      if (e.key === 'Escape') setIsEditingDenName(false);
+                    }}
+                    placeholder="Den Name..."
+                    autoFocus
+                    className="bg-stone-950 border border-amber-500/60 rounded px-2 py-0.5 text-xs text-stone-100 w-44"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSaveDenName}
+                    className="p-1 rounded bg-emerald-700 hover:bg-emerald-600 text-stone-950 cursor-pointer"
+                    title="Save Den Name"
+                  >
+                    <Check className="w-3 h-3" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingDenName(false)}
+                    className="p-1 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 cursor-pointer"
+                    title="Cancel"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1">
+                  <span className="text-amber-200 font-semibold">{activeWarband.denName}</span>
+                  <button
+                    type="button"
+                    onClick={handleStartEditDenName}
+                    className="p-0.5 rounded hover:bg-stone-800 text-stone-400 hover:text-amber-300 cursor-pointer"
+                    title="Rename Starting Den"
+                  >
+                    <Pencil className="w-3 h-3" />
+                  </button>
+                </span>
+              )}
+              <span>({activeWarband.denType}) •</span>
+              <span>
+                <strong className="text-stone-400">2.0 Allegiance Rules:</strong>{' '}
+                {allegiance?.specialRules}
+              </span>
+            </div>
           </div>
 
           {/* Key Metrics */}
@@ -1883,9 +2038,9 @@ export const WarbandRosterView: React.FC = () => {
                   </button>
 
                   <button
-                    onClick={() => handleDeleteFighter(fighter)}
+                    onClick={() => openDismissFighterModal(fighter)}
                     className="p-1.5 text-stone-500 hover:text-red-400 cursor-pointer"
-                    title="Dismiss Beast"
+                    title="Dismiss Beast (with optional Penny Refund)"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -1998,7 +2153,7 @@ export const WarbandRosterView: React.FC = () => {
                   {equipped.length === 0 ? (
                     <p className="text-stone-500 italic">Unarmed & Unarmoured</p>
                   ) : (
-                    <ul className="space-y-1">
+                    <ul className="space-y-1.5">
                       {equipped.map((item) => {
                         const eqRef = rules.equipment.find(
                           (e) => e.id === item.equipmentId
@@ -2006,27 +2161,91 @@ export const WarbandRosterView: React.FC = () => {
                         const slotsUsed = eqRef
                           ? getEffectiveSlotsRequired(eqRef, fighter, rules)
                           : 1;
+                        const isRenamingThis = renamingItemId === item.instanceId;
                         return (
                           <li
                             key={item.instanceId}
-                            className="flex items-center justify-between text-stone-200 gap-2"
+                            className="space-y-1 text-stone-200"
                           >
-                            <span>
-                              <strong className="text-amber-200/90">
-                                {formatItemDisplayName(item, eqRef)}
-                              </strong>{' '}
-                              <span className="text-stone-500 text-[11px]">
-                                ({item.slot}
-                                {slotsUsed > 1 ? ' • 2 Armour Slots' : ''})
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="min-w-0">
+                                <strong className="text-amber-200/90">
+                                  {formatItemDisplayName(item, eqRef)}
+                                </strong>{' '}
+                                <span className="text-stone-500 text-[11px]">
+                                  ({item.slot}
+                                  {slotsUsed > 1 ? ' • 2 Armour Slots' : ''})
+                                </span>
                               </span>
-                            </span>
-                            <button
-                              onClick={() => handleMoveItem(item.instanceId, null)}
-                              className="text-[10px] px-1.5 py-0.5 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 cursor-pointer shrink-0"
-                              title="Send to Den Stash"
-                            >
-                              Stash
-                            </button>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    isRenamingThis
+                                      ? setRenamingItemId(null)
+                                      : handleStartRenameItem(item)
+                                  }
+                                  className="text-[10px] px-1.5 py-0.5 rounded bg-stone-800 hover:bg-stone-700 text-amber-300 flex items-center gap-0.5 cursor-pointer"
+                                  title="Set or edit custom name for this item"
+                                >
+                                  <Pencil className="w-2.5 h-2.5" />
+                                  <span>Name</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleMoveItem(item.instanceId, null)}
+                                  className="text-[10px] px-1.5 py-0.5 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 cursor-pointer"
+                                  title="Send to Den Stash"
+                                >
+                                  Stash
+                                </button>
+                              </div>
+                            </div>
+                            {isRenamingThis && (
+                              <div className="flex items-center gap-1 bg-stone-900 border border-amber-600/50 rounded-lg p-1.5">
+                                <input
+                                  type="text"
+                                  value={renameItemText}
+                                  onChange={(e) => setRenameItemText(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      handleSaveItemCustomName(item.instanceId);
+                                    }
+                                    if (e.key === 'Escape') {
+                                      setRenamingItemId(null);
+                                    }
+                                  }}
+                                  placeholder={`Custom name for ${eqRef?.name || 'item'}...`}
+                                  autoFocus
+                                  className="flex-1 bg-stone-950 border border-stone-700 rounded px-2 py-1 text-[11px] text-stone-100"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveItemCustomName(item.instanceId)}
+                                  className="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-stone-950 font-bold text-[10px] cursor-pointer"
+                                >
+                                  Save
+                                </button>
+                                {item.customName && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSaveItemCustomName(item.instanceId, '')}
+                                    className="px-1.5 py-1 rounded bg-stone-800 hover:bg-red-950/60 text-red-300 text-[10px] cursor-pointer"
+                                    title="Clear custom name"
+                                  >
+                                    Clear
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => setRenamingItemId(null)}
+                                  className="px-1.5 py-1 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 text-[10px] cursor-pointer"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            )}
                           </li>
                         );
                       })}
@@ -3631,79 +3850,142 @@ export const WarbandRosterView: React.FC = () => {
                         slotName === 'Armour 2' &&
                         gearSlotOcc.twoSlotArmourItem !== null &&
                         item?.instanceId === gearSlotOcc.twoSlotArmourItem.instanceId;
+                      const isRenamingSlotItem =
+                        item !== null &&
+                        !isSecondarySlotOfMultiSlotItem &&
+                        renamingItemId === item.instanceId;
                       return (
                         <div
                           key={slotName}
-                          className={`rounded-xl px-3 py-2 border text-xs flex items-center justify-between gap-2 ${
+                          className={`rounded-xl px-3 py-2 border text-xs space-y-1.5 ${
                             item
                               ? 'bg-stone-950 border-amber-700/50 text-stone-100'
                               : 'bg-stone-950/40 border-dashed border-stone-800 text-stone-500'
                           }`}
                         >
-                          <div className="min-w-0">
-                            <div className="text-[10px] uppercase tracking-wider font-mono text-stone-400">
-                              {slotName}
-                              {isSecondarySlotOfMultiSlotItem && (
-                                <span className="ml-1 text-amber-400">
-                                  (2nd Armour Slot)
-                                </span>
-                              )}
-                              {item && stackable && (
-                                <span className="ml-1.5 text-emerald-400 font-semibold">
-                                  • Stack ({qty} carried)
-                                </span>
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="text-[10px] uppercase tracking-wider font-mono text-stone-400">
+                                {slotName}
+                                {isSecondarySlotOfMultiSlotItem && (
+                                  <span className="ml-1 text-amber-400">
+                                    (2nd Armour Slot)
+                                  </span>
+                                )}
+                                {item && stackable && (
+                                  <span className="ml-1.5 text-emerald-400 font-semibold">
+                                    • Stack ({qty} carried)
+                                  </span>
+                                )}
+                              </div>
+                              {item ? (
+                                <div className="font-semibold text-amber-200 truncate">
+                                  {formatItemDisplayName(item, eq)}
+                                  {isSecondarySlotOfMultiSlotItem
+                                    ? ' (Heavy/Very Heavy Armour)'
+                                    : ''}
+                                </div>
+                              ) : (
+                                <div className="italic text-[11px]">Empty Slot</div>
                               )}
                             </div>
-                            {item ? (
-                              <div className="font-semibold text-amber-200 truncate">
-                                {formatItemDisplayName(item, eq)}
-                                {isSecondarySlotOfMultiSlotItem
-                                  ? ' (Heavy/Very Heavy Armour)'
-                                  : ''}
+                            {item && !isSecondarySlotOfMultiSlotItem && (
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {stackable && (
+                                  <div className="flex items-center gap-1 bg-stone-900 border border-stone-700 rounded-lg px-1.5 py-0.5">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleAdjustStackQuantity(item, -1, false)
+                                      }
+                                      title="Remove/consume 1 from stack"
+                                      className="px-1 text-stone-300 hover:text-red-300 font-bold cursor-pointer"
+                                    >
+                                      -1
+                                    </button>
+                                    <span className="text-[11px] font-mono font-bold text-amber-300 px-0.5">
+                                      ×{qty}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleAdjustStackQuantity(item, 1, !freeGrant)
+                                      }
+                                      title={
+                                        freeGrant
+                                          ? 'Add +1 to stack (Free)'
+                                          : `Buy +1 for stack (${eq?.cost ?? 0}p)`
+                                      }
+                                      className="px-1 text-emerald-300 hover:text-emerald-200 font-bold cursor-pointer"
+                                    >
+                                      +1
+                                    </button>
+                                  </div>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    isRenamingSlotItem
+                                      ? setRenamingItemId(null)
+                                      : handleStartRenameItem(item)
+                                  }
+                                  className="px-2 py-1 rounded bg-stone-800 hover:bg-stone-700 text-amber-300 text-[11px] flex items-center gap-1 shrink-0 cursor-pointer"
+                                  title="Set or edit custom name for this item"
+                                >
+                                  <Pencil className="w-3 h-3" />
+                                  <span>Name</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleMoveItem(item.instanceId, null)}
+                                  className="px-2 py-1 rounded bg-stone-800 hover:bg-stone-700 text-stone-200 text-[11px] shrink-0 cursor-pointer"
+                                >
+                                  Unequip
+                                </button>
                               </div>
-                            ) : (
-                              <div className="italic text-[11px]">Empty Slot</div>
                             )}
                           </div>
-                          {item && !isSecondarySlotOfMultiSlotItem && (
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              {stackable && (
-                                <div className="flex items-center gap-1 bg-stone-900 border border-stone-700 rounded-lg px-1.5 py-0.5">
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      handleAdjustStackQuantity(item, -1, false)
-                                    }
-                                    title="Remove/consume 1 from stack"
-                                    className="px-1 text-stone-300 hover:text-red-300 font-bold cursor-pointer"
-                                  >
-                                    -1
-                                  </button>
-                                  <span className="text-[11px] font-mono font-bold text-amber-300 px-0.5">
-                                    ×{qty}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      handleAdjustStackQuantity(item, 1, !freeGrant)
-                                    }
-                                    title={
-                                      freeGrant
-                                        ? 'Add +1 to stack (Free)'
-                                        : `Buy +1 for stack (${eq?.cost ?? 0}p)`
-                                    }
-                                    className="px-1 text-emerald-300 hover:text-emerald-200 font-bold cursor-pointer"
-                                  >
-                                    +1
-                                  </button>
-                                </div>
+                          {item && isRenamingSlotItem && (
+                            <div className="flex items-center gap-1.5 bg-stone-900 border border-amber-600/50 rounded-lg p-1.5">
+                              <input
+                                type="text"
+                                value={renameItemText}
+                                onChange={(e) => setRenameItemText(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    handleSaveItemCustomName(item.instanceId);
+                                  }
+                                  if (e.key === 'Escape') {
+                                    setRenamingItemId(null);
+                                  }
+                                }}
+                                placeholder={`Custom name for ${eq?.name || 'item'}...`}
+                                autoFocus
+                                className="flex-1 bg-stone-950 border border-stone-700 rounded px-2 py-1 text-[11px] text-stone-100"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleSaveItemCustomName(item.instanceId)}
+                                className="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-stone-950 font-bold text-[10px] cursor-pointer"
+                              >
+                                Save
+                              </button>
+                              {item.customName && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveItemCustomName(item.instanceId, '')}
+                                  className="px-1.5 py-1 rounded bg-stone-800 hover:bg-red-950/60 text-red-300 text-[10px] cursor-pointer"
+                                >
+                                  Clear
+                                </button>
                               )}
                               <button
                                 type="button"
-                                onClick={() => handleMoveItem(item.instanceId, null)}
-                                className="px-2 py-1 rounded bg-stone-800 hover:bg-stone-700 text-stone-200 text-[11px] shrink-0 cursor-pointer"
+                                onClick={() => setRenamingItemId(null)}
+                                className="px-1.5 py-1 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 text-[10px] cursor-pointer"
                               >
-                                Unequip
+                                Cancel
                               </button>
                             </div>
                           )}
@@ -4550,6 +4832,142 @@ export const WarbandRosterView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* DISMISS BEAST MODAL (WITH OPTIONAL ACCUMULATED VALUE REFUND) */}
+      {fighterToDismiss &&
+        (() => {
+          const species = rules.species.find((s) => s.id === fighterToDismiss.speciesId);
+          const equipped = activeWarband.inventory.filter(
+            (i) => i.assignedFighterId === fighterToDismiss.id
+          );
+          const gearValue = equipped.reduce((acc, i) => acc + i.purchaseCost, 0);
+          const totalCardValue = fighterToDismiss.recruitmentCost + gearValue;
+          const calculatedRefund = !refundDismissedBeast
+            ? 0
+            : refundGearWithBeast || gearValue === 0
+            ? totalCardValue
+            : fighterToDismiss.recruitmentCost;
+
+          return (
+            <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+              <div className="bg-stone-900 border border-stone-700 rounded-2xl max-w-md w-full p-5 space-y-4 shadow-2xl">
+                <div className="flex items-start justify-between gap-3 border-b border-stone-800 pb-3">
+                  <div>
+                    <h3 className="text-lg font-bold text-amber-400 font-serif">
+                      Dismiss {fighterToDismiss.name}?
+                    </h3>
+                    <p className="text-xs text-stone-400 mt-0.5">
+                      {species?.name || 'Beast'} • {fighterToDismiss.role} • Card Value:{' '}
+                      <strong className="text-amber-300">{totalCardValue}p</strong>
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setFighterToDismiss(null)}
+                    className="text-stone-400 hover:text-stone-100 cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="bg-stone-950 border border-stone-800 rounded-xl p-3.5 space-y-3 text-xs">
+                  <div className="flex items-center justify-between text-stone-300">
+                    <span>Base Recruitment Cost:</span>
+                    <strong className="font-mono text-stone-100">
+                      {fighterToDismiss.recruitmentCost}p
+                    </strong>
+                  </div>
+                  <div className="flex items-center justify-between text-stone-300">
+                    <span>Equipped Gear ({equipped.length} items):</span>
+                    <strong className="font-mono text-stone-100">{gearValue}p</strong>
+                  </div>
+                  <div className="flex items-center justify-between border-t border-stone-800 pt-2 text-amber-300 font-bold">
+                    <span>Total Accumulated Card Value:</span>
+                    <span className="font-mono text-sm">{totalCardValue}p</span>
+                  </div>
+                </div>
+
+                {/* Refund Options */}
+                <div className="bg-emerald-950/20 border border-emerald-800/50 rounded-xl p-3.5 space-y-2.5 text-xs">
+                  <label className="flex items-start gap-2 text-emerald-300 font-semibold cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={refundDismissedBeast}
+                      onChange={(e) => setRefundDismissedBeast(e.target.checked)}
+                      className="mt-0.5"
+                    />
+                    <span>
+                      Refund Pennies to Warband Treasury (ideal when building or revising a
+                      warband)
+                    </span>
+                  </label>
+
+                  {refundDismissedBeast && gearValue > 0 && (
+                    <div className="pl-5 space-y-2 pt-1 text-[11px] text-stone-300">
+                      <label className="flex items-start gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="dismissRefundMode"
+                          checked={refundGearWithBeast}
+                          onChange={() => setRefundGearWithBeast(true)}
+                          className="mt-0.5"
+                        />
+                        <span>
+                          <strong className="text-amber-300">
+                            Refund Full Card Value (+{totalCardValue}p)
+                          </strong>{' '}
+                          — Refunds both the beast ({fighterToDismiss.recruitmentCost}p) and
+                          all equipped gear ({gearValue}p).
+                        </span>
+                      </label>
+                      <label className="flex items-start gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="dismissRefundMode"
+                          checked={!refundGearWithBeast}
+                          onChange={() => setRefundGearWithBeast(false)}
+                          className="mt-0.5"
+                        />
+                        <span>
+                          <strong className="text-stone-100">
+                            Refund Beast Only (+{fighterToDismiss.recruitmentCost}p)
+                          </strong>{' '}
+                          — Returns all equipped items to your Den Stash.
+                        </span>
+                      </label>
+                    </div>
+                  )}
+
+                  {!refundDismissedBeast && equipped.length > 0 && (
+                    <p className="pl-5 text-[11px] text-stone-400">
+                      No Pennies will be refunded. All {equipped.length} equipped item(s) will
+                      be returned to your Den Stash.
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setFighterToDismiss(null)}
+                    className="px-4 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs font-semibold cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmDismissFighter}
+                    className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-stone-950 font-bold text-xs cursor-pointer"
+                  >
+                    {calculatedRefund > 0
+                      ? `Dismiss & Refund +${calculatedRefund}p`
+                      : 'Dismiss Without Refund (0p)'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
       {/* Stat Roll & Modifier Breakdown Modal */}
       {inspectTarget &&

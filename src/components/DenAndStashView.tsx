@@ -23,6 +23,9 @@ import {
   CheckCircle2,
   ShoppingBag,
   History,
+  Pencil,
+  Check,
+  X,
 } from 'lucide-react';
 
 export const DenAndStashView: React.FC = () => {
@@ -49,6 +52,17 @@ export const DenAndStashView: React.FC = () => {
   // Manual Treasury adjustment state
   const [pennyDelta, setPennyDelta] = useState(25);
   const [pennyReason, setPennyReason] = useState('Post-Battle Spoils & Foraging');
+
+  // Den Name Editing State
+  const [isEditingDenName, setIsEditingDenName] = useState(false);
+  const [denNameInput, setDenNameInput] = useState('');
+
+  // Stash Sale Price Override State
+  const [overrideStashSellPrice, setOverrideStashSellPrice] = useState(false);
+  const [stashSellOverrideMode, setStashSellOverrideMode] = useState<'full' | 'custom'>(
+    'full'
+  );
+  const [customStashSellAmount, setCustomStashSellAmount] = useState<number>(10);
 
   if (!activeWarband) return null;
 
@@ -260,21 +274,48 @@ export const DenAndStashView: React.FC = () => {
     await saveWarband({ ...activeWarband, inventory: updated });
   };
 
-  const handleSellStashedItem = async (item: EquippedOrStashedItem) => {
-    const eq = rules.equipment.find((e) => e.id === item.equipmentId);
-    // Check if warband has Fence's Contact upgrade (75% resale vs 50%)
+  const handleStartEditDenName = () => {
+    setDenNameInput(activeWarband.denName);
+    setIsEditingDenName(true);
+  };
+
+  const handleSaveDenName = async () => {
+    const trimmed = denNameInput.trim();
+    if (trimmed) {
+      await saveWarband({
+        ...activeWarband,
+        denName: trimmed,
+      });
+    }
+    setIsEditingDenName(false);
+  };
+
+  const getStashedItemSellPrice = (item: EquippedOrStashedItem): number => {
     const hasFence = activeWarband.denUpgrades.some(
       (d) => d.upgradeId === 'den-fences-contact'
     );
-    const sellPrice = Math.max(
-      1,
-      Math.floor(item.purchaseCost * (hasFence ? 0.75 : 0.5))
-    );
+    if (!overrideStashSellPrice) {
+      return Math.max(1, Math.floor(item.purchaseCost * (hasFence ? 0.75 : 0.5)));
+    }
+    if (stashSellOverrideMode === 'full') {
+      return item.purchaseCost;
+    }
+    return Math.max(0, Math.floor(Number(customStashSellAmount) || 0));
+  };
+
+  const handleSellStashedItem = async (item: EquippedOrStashedItem) => {
+    const eq = rules.equipment.find((e) => e.id === item.equipmentId);
+    const sellPrice = getStashedItemSellPrice(item);
     const displayName = formatItemDisplayName(item, eq);
+    const priceLabel = !overrideStashSellPrice
+      ? `${sellPrice} Pennies`
+      : stashSellOverrideMode === 'full'
+      ? `${sellPrice} Pennies (Full Price Refund)`
+      : `${sellPrice} Pennies (Custom Override Price)`;
 
     if (
       !confirm(
-        `Sell ${displayName} from your Den Stash for ${sellPrice} Pennies?`
+        `Sell ${displayName} from your Den Stash for ${priceLabel}?`
       )
     ) {
       return;
@@ -290,7 +331,11 @@ export const DenAndStashView: React.FC = () => {
           id: crypto.randomUUID(),
           date: new Date().toISOString().slice(0, 10),
           deltaPennies: sellPrice,
-          reason: `Sold ${displayName} from Den Stash`,
+          reason: !overrideStashSellPrice
+            ? `Sold ${displayName} from Den Stash`
+            : stashSellOverrideMode === 'full'
+            ? `Sold ${displayName} from Den Stash (Full Value Refund)`
+            : `Sold ${displayName} from Den Stash (Custom Price Override)`,
           balanceAfter: newBalance,
         },
         ...activeWarband.treasuryLog,
@@ -324,9 +369,55 @@ export const DenAndStashView: React.FC = () => {
       <div className="bg-stone-900 border border-stone-800 rounded-2xl p-5 space-y-5">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-stone-800 pb-4">
           <div>
-            <h2 className="text-xl font-bold text-amber-400 font-serif flex items-center gap-2">
-              <Home className="w-5 h-5" />
-              {activeWarband.denName} — {activeWarband.denType}
+            <h2 className="text-xl font-bold text-amber-400 font-serif flex flex-wrap items-center gap-2">
+              <Home className="w-5 h-5 shrink-0" />
+              {isEditingDenName ? (
+                <span className="inline-flex items-center gap-1.5 font-sans">
+                  <input
+                    type="text"
+                    value={denNameInput}
+                    onChange={(e) => setDenNameInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleSaveDenName();
+                      if (e.key === 'Escape') setIsEditingDenName(false);
+                    }}
+                    placeholder="Den Name..."
+                    autoFocus
+                    className="bg-stone-950 border border-amber-500/70 rounded-lg px-2.5 py-1 text-sm text-stone-100 w-56"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSaveDenName}
+                    className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-stone-950 text-xs font-bold flex items-center gap-1 cursor-pointer"
+                    title="Save Den Name"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Save</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingDenName(false)}
+                    className="px-2 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs cursor-pointer"
+                    title="Cancel"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-2">
+                  <span>{activeWarband.denName}</span>
+                  <button
+                    type="button"
+                    onClick={handleStartEditDenName}
+                    className="px-2 py-0.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 hover:text-amber-300 text-xs font-sans font-normal flex items-center gap-1 cursor-pointer"
+                    title="Rename Starting Den"
+                  >
+                    <Pencil className="w-3 h-3" />
+                    <span>Rename</span>
+                  </button>
+                </span>
+              )}
+              <span className="text-stone-400 font-normal">— {activeWarband.denType}</span>
             </h2>
             <p className="text-xs text-stone-400 mt-1">
               In Burrows & Badgers 2.0, Den Upgrades are built using Labour & Materials (1 Material = 5p at the General Store) and resolved in Step 9 of the Post-Battle Sequence.
@@ -660,54 +751,114 @@ export const DenAndStashView: React.FC = () => {
               Your Den Stash is currently empty. Unequipped weapons, armour, and potions are stored here safely between battles.
             </p>
           ) : (
-            <div className="space-y-2">
-              {stashedItems.map((item) => {
-                const eq = rules.equipment.find((e) => e.id === item.equipmentId);
-                return (
-                  <div
-                    key={item.instanceId}
-                    className="bg-stone-950 border border-stone-800 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
-                  >
-                    <div>
-                      <span className="font-bold text-stone-100">
-                        {formatItemDisplayName(item, eq)}
-                      </span>{' '}
-                      <span className="text-stone-400">
-                        ({eq?.category} • Value {item.purchaseCost}p)
+            <div className="space-y-3">
+              {/* Sale Price Override Controls */}
+              <div className="bg-stone-950/90 border border-stone-800 rounded-xl p-3 space-y-2 text-xs">
+                <label className="flex items-center gap-2 text-amber-300 font-semibold cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={overrideStashSellPrice}
+                    onChange={(e) => setOverrideStashSellPrice(e.target.checked)}
+                  />
+                  <span>
+                    Override sale price when selling from Stash (Full Price or Custom Amount)
+                  </span>
+                </label>
+
+                {overrideStashSellPrice && (
+                  <div className="flex flex-wrap items-center gap-3 pl-5 pt-1 text-[11px] text-stone-300">
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="stashSellOverrideMode"
+                        checked={stashSellOverrideMode === 'full'}
+                        onChange={() => setStashSellOverrideMode('full')}
+                      />
+                      <span className="font-semibold text-emerald-300">
+                        Full Price (100% Refund)
                       </span>
-                      {eq?.weaponModifiers && (
-                        <div className="text-[11px] text-stone-400">{eq.weaponModifiers}</div>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <select
-                        defaultValue=""
-                        onChange={(e) =>
-                          handleEquipFromStash(item.instanceId, e.target.value)
-                        }
-                        className="bg-stone-900 border border-stone-700 rounded-lg px-2 py-1 text-xs text-stone-200"
-                      >
-                        <option value="" disabled>
-                          Give to Fighter...
-                        </option>
-                        {activeWarband.fighters
-                          .filter((f) => f.status !== 'Dead')
-                          .map((f) => (
-                            <option key={f.id} value={f.id}>
-                              {f.name} ({f.role})
-                            </option>
-                          ))}
-                      </select>
-                      <button
-                        onClick={() => handleSellStashedItem(item)}
-                        className="px-2.5 py-1 rounded bg-stone-800 hover:bg-amber-900/50 text-amber-300 font-medium cursor-pointer"
-                      >
-                        Sell
-                      </button>
-                    </div>
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="stashSellOverrideMode"
+                        checked={stashSellOverrideMode === 'custom'}
+                        onChange={() => setStashSellOverrideMode('custom')}
+                      />
+                      <span className="font-semibold text-amber-300">Custom Price:</span>
+                    </label>
+                    {stashSellOverrideMode === 'custom' && (
+                      <div className="inline-flex items-center gap-1">
+                        <input
+                          type="number"
+                          min={0}
+                          value={customStashSellAmount}
+                          onChange={(e) =>
+                            setCustomStashSellAmount(Math.max(0, Number(e.target.value) || 0))
+                          }
+                          className="w-16 bg-stone-900 border border-amber-600/60 rounded px-2 py-0.5 text-center font-mono font-bold text-amber-300"
+                        />
+                        <span className="text-stone-400">Pennies</span>
+                      </div>
+                    )}
                   </div>
-                );
-              })}
+                )}
+              </div>
+
+              <div className="space-y-2">
+                {stashedItems.map((item) => {
+                  const eq = rules.equipment.find((e) => e.id === item.equipmentId);
+                  const sellPrice = getStashedItemSellPrice(item);
+                  return (
+                    <div
+                      key={item.instanceId}
+                      className="bg-stone-950 border border-stone-800 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
+                    >
+                      <div>
+                        <span className="font-bold text-stone-100">
+                          {formatItemDisplayName(item, eq)}
+                        </span>{' '}
+                        <span className="text-stone-400">
+                          ({eq?.category} • Value {item.purchaseCost}p)
+                        </span>
+                        {eq?.weaponModifiers && (
+                          <div className="text-[11px] text-stone-400">{eq.weaponModifiers}</div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <select
+                          defaultValue=""
+                          onChange={(e) =>
+                            handleEquipFromStash(item.instanceId, e.target.value)
+                          }
+                          className="bg-stone-900 border border-stone-700 rounded-lg px-2 py-1 text-xs text-stone-200"
+                        >
+                          <option value="" disabled>
+                            Give to Fighter...
+                          </option>
+                          {activeWarband.fighters
+                            .filter((f) => f.status !== 'Dead')
+                            .map((f) => (
+                              <option key={f.id} value={f.id}>
+                                {f.name} ({f.role})
+                              </option>
+                            ))}
+                        </select>
+                        <button
+                          onClick={() => handleSellStashedItem(item)}
+                          className={`px-2.5 py-1 rounded font-medium cursor-pointer ${
+                            overrideStashSellPrice
+                              ? 'bg-emerald-900/60 hover:bg-emerald-800/80 text-emerald-300 border border-emerald-700/50'
+                              : 'bg-stone-800 hover:bg-amber-900/50 text-amber-300'
+                          }`}
+                        >
+                          Sell ({sellPrice}p)
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>
