@@ -5,11 +5,14 @@ import {
   WarbandDenUpgradeInstance,
 } from '../types/game';
 import {
+  applyWeaponUpgradeToItem,
   formatItemDisplayName,
   getAllegianceStartingRareEquipment,
   getEquipmentCostForAllegiance,
   getItemQuantity,
+  isEligibleWeaponForUpgrade,
   isEquipmentStackable,
+  isWeaponUpgradeEquipment,
   validateEquipmentForFighter,
 } from '../utils/gameMath';
 import {
@@ -45,6 +48,7 @@ export const DenAndStashView: React.FC = () => {
 
   // Stash purchase state
   const [stashEqId, setStashEqId] = useState(sortedEquipment[0]?.id || '');
+  const [stashTargetWeaponId, setStashTargetWeaponId] = useState<string>('');
   const [stashQuantity, setStashQuantity] = useState(1);
   const [stashCustomName, setStashCustomName] = useState('');
   const [stashFree, setStashFree] = useState(false);
@@ -146,6 +150,64 @@ export const DenAndStashView: React.FC = () => {
     e.preventDefault();
     const eq = rules.equipment.find((x) => x.id === stashEqId);
     if (!eq) return;
+
+    if (isWeaponUpgradeEquipment(eq)) {
+      const eligibleWarbandWeapons = activeWarband.inventory.filter((item) => {
+        const wEq = rules.equipment.find((x) => x.id === item.equipmentId);
+        return isEligibleWeaponForUpgrade(item, wEq, eq.id);
+      });
+      const targetWeapon =
+        eligibleWarbandWeapons.find((w) => w.instanceId === stashTargetWeaponId) ||
+        eligibleWarbandWeapons[0];
+      if (!targetWeapon) {
+        alert(
+          `Your warband has no eligible weapons (in Stash or equipped on fighters) to apply ${eq.name} to. Purchase a weapon first!`
+        );
+        return;
+      }
+      const unitCost = getEquipmentCostForAllegiance(eq, allegiance).cost;
+      const cost = stashFree ? 0 : unitCost;
+      if (cost > activeWarband.treasuryPennies) {
+        alert(`Insufficient Pennies (${activeWarband.treasuryPennies}p in Treasury).`);
+        return;
+      }
+      const targetWeaponEq = rules.equipment.find(
+        (x) => x.id === targetWeapon.equipmentId
+      );
+      const targetWeaponLabel = formatItemDisplayName(targetWeapon, targetWeaponEq);
+      const upgradedWeapon = applyWeaponUpgradeToItem(
+        targetWeapon,
+        eq.id,
+        unitCost
+      );
+      if (stashCustomName.trim()) {
+        upgradedWeapon.customName = stashCustomName.trim();
+      }
+      const nextInventory = activeWarband.inventory.map((i) =>
+        i.instanceId === targetWeapon.instanceId ? upgradedWeapon : i
+      );
+      const newBalance = activeWarband.treasuryPennies - cost;
+      await saveWarband({
+        ...activeWarband,
+        treasuryPennies: newBalance,
+        inventory: nextInventory,
+        treasuryLog:
+          cost > 0
+            ? [
+                {
+                  id: crypto.randomUUID(),
+                  date: new Date().toISOString().slice(0, 10),
+                  deltaPennies: -cost,
+                  reason: `Purchased ${eq.name} and applied to ${targetWeaponLabel}`,
+                  balanceAfter: newBalance,
+                },
+                ...activeWarband.treasuryLog,
+              ]
+            : activeWarband.treasuryLog,
+      });
+      setStashCustomName('');
+      return;
+    }
 
     const stackable = isEquipmentStackable(eq);
     const qty = stackable ? Math.max(1, Math.min(99, stashQuantity || 1)) : 1;
@@ -682,7 +744,58 @@ export const DenAndStashView: React.FC = () => {
             </select>
             {(() => {
               const selectedStashEq = rules.equipment.find((e) => e.id === stashEqId);
-              if (!selectedStashEq || !isEquipmentStackable(selectedStashEq)) return null;
+              if (!selectedStashEq) return null;
+
+              if (isWeaponUpgradeEquipment(selectedStashEq)) {
+                const eligibleWarbandWeapons = activeWarband.inventory.filter((item) => {
+                  const wEq = rules.equipment.find((x) => x.id === item.equipmentId);
+                  return isEligibleWeaponForUpgrade(item, wEq, selectedStashEq.id);
+                });
+                const effectiveTargetId =
+                  eligibleWarbandWeapons.find(
+                    (w) => w.instanceId === stashTargetWeaponId
+                  )?.instanceId ||
+                  eligibleWarbandWeapons[0]?.instanceId ||
+                  '';
+                return (
+                  <div className="bg-amber-950/30 border border-amber-700/60 rounded-lg px-3 py-2 space-y-1.5 text-xs">
+                    <label className="block font-semibold text-amber-300">
+                      Select Weapon to Apply {selectedStashEq.name} To:
+                    </label>
+                    <select
+                      value={effectiveTargetId}
+                      onChange={(e) => setStashTargetWeaponId(e.target.value)}
+                      disabled={eligibleWarbandWeapons.length === 0}
+                      className="w-full bg-stone-900 border border-amber-600/70 rounded-lg px-2.5 py-1.5 text-xs text-amber-200"
+                    >
+                      {eligibleWarbandWeapons.length === 0 ? (
+                        <option value="">
+                          No eligible weapons in Warband or Stash...
+                        </option>
+                      ) : (
+                        eligibleWarbandWeapons.map((wItem) => {
+                          const wEq = rules.equipment.find(
+                            (x) => x.id === wItem.equipmentId
+                          );
+                          const owner = wItem.assignedFighterId
+                            ? activeWarband.fighters.find(
+                                (f) => f.id === wItem.assignedFighterId
+                              )
+                            : null;
+                          return (
+                            <option key={wItem.instanceId} value={wItem.instanceId}>
+                              {formatItemDisplayName(wItem, wEq)} —{' '}
+                              {owner ? `Equipped on ${owner.name}` : 'In Den Stash'}
+                            </option>
+                          );
+                        })
+                      )}
+                    </select>
+                  </div>
+                );
+              }
+
+              if (!isEquipmentStackable(selectedStashEq)) return null;
               const unitCost = getEquipmentCostForAllegiance(selectedStashEq, allegiance).cost;
               return (
                 <div className="flex flex-wrap items-center justify-between gap-2 bg-emerald-950/30 border border-emerald-800/50 rounded-lg px-3 py-2 text-xs">
@@ -741,7 +854,11 @@ export const DenAndStashView: React.FC = () => {
                 type="submit"
                 className="px-3.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-stone-950 font-bold text-xs cursor-pointer"
               >
-                + Add to Stash
+                {isWeaponUpgradeEquipment(
+                  rules.equipment.find((e) => e.id === stashEqId)
+                )
+                  ? '+ Apply Upgrade to Weapon'
+                  : '+ Add to Stash'}
               </button>
             </div>
           </form>

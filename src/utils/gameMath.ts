@@ -156,7 +156,60 @@ export function getItemQuantity(item: EquippedOrStashedItem): number {
 }
 
 /**
- * Formats an equipped or stashed item's display name, including its stack quantity (e.g. "Broadhead Arrows ×5").
+ * Returns true if `eq` is a Weapon Upgrade item (e.g. Master-smithed Upgrade or Malleus Maleficarum)
+ * that attaches permanently to a specific weapon rather than occupying its own inventory row.
+ */
+export function isWeaponUpgradeEquipment(eq?: EquipmentRef | null): boolean {
+  if (!eq) return false;
+  return (
+    getEffectiveEquipmentType(eq) === 'Upgrade' ||
+    eq.id === 'eq-master-smithed-upgrade' ||
+    eq.id === 'eq-malleus-maleficarum'
+  );
+}
+
+/**
+ * Checks whether a specific inventory item is a Weapon eligible to receive `upgradeEqId`.
+ */
+export function isEligibleWeaponForUpgrade(
+  item: EquippedOrStashedItem,
+  weaponEq?: EquipmentRef | null,
+  upgradeEqId?: string
+): { eligible: boolean; reason?: string } {
+  if (!weaponEq || getEffectiveEquipmentType(weaponEq) !== 'Weapon') {
+    return { eligible: false, reason: 'Not a weapon' };
+  }
+  if (upgradeEqId === 'eq-master-smithed-upgrade' && item.isMasterSmithed) {
+    return { eligible: false, reason: 'Already Master-smithed' };
+  }
+  if (upgradeEqId === 'eq-malleus-maleficarum' && item.isMalleusMaleficarum) {
+    return { eligible: false, reason: 'Already has Malleus Maleficarum' };
+  }
+  return { eligible: true };
+}
+
+/**
+ * Applies a Weapon Upgrade (`eq-master-smithed-upgrade` or `eq-malleus-maleficarum`)
+ * directly onto a target Weapon item, tagging it and adding the upgrade cost to its value.
+ */
+export function applyWeaponUpgradeToItem(
+  weaponItem: EquippedOrStashedItem,
+  upgradeEqId: string,
+  upgradeCostPaid: number
+): EquippedOrStashedItem {
+  return {
+    ...weaponItem,
+    isMasterSmithed:
+      upgradeEqId === 'eq-master-smithed-upgrade' ? true : weaponItem.isMasterSmithed,
+    isMalleusMaleficarum:
+      upgradeEqId === 'eq-malleus-maleficarum' ? true : weaponItem.isMalleusMaleficarum,
+    purchaseCost: weaponItem.purchaseCost + Math.max(0, upgradeCostPaid),
+  };
+}
+
+/**
+ * Formats an equipped or stashed item's display name, including its stack quantity (e.g. "Broadhead Arrows ×5")
+ * and any attached weapon upgrades (e.g. "[Master-smithed]", "[Malleus Maleficarum]").
  */
 export function formatItemDisplayName(
   item: EquippedOrStashedItem,
@@ -168,10 +221,20 @@ export function formatItemDisplayName(
     !item.customName && (qty > 1 || isEquipmentStackable(eq))
       ? rawBaseName.replace(/\s*\(1\s+[^)]*\/\s*Stack\)/i, '')
       : rawBaseName;
-  if (qty > 1 || isEquipmentStackable(eq)) {
-    return `${cleanBaseName} ×${qty}`;
+
+  const upgradeTags: string[] = [];
+  if (item.isMasterSmithed && !/master-smithed/i.test(cleanBaseName)) {
+    upgradeTags.push('Master-smithed');
   }
-  return cleanBaseName;
+  if (item.isMalleusMaleficarum && !/malleus maleficarum/i.test(cleanBaseName)) {
+    upgradeTags.push('Malleus Maleficarum');
+  }
+  const upgradeSuffix = upgradeTags.length > 0 ? ` [${upgradeTags.join(' • ')}]` : '';
+
+  if (qty > 1 || isEquipmentStackable(eq)) {
+    return `${cleanBaseName}${upgradeSuffix} ×${qty}`;
+  }
+  return `${cleanBaseName}${upgradeSuffix}`;
 }
 
 const SKILL_OR_SPELL_PAGE_MAP: Record<string, string> = {
@@ -838,15 +901,35 @@ export function validateEquipmentForFighter(
     return { valid: true, suggestedSlot: "Mage's Pouch" };
   }
 
-  // 7. Weapon Upgrades require at least 1 Weapon equipped
+  // 7. Weapon Upgrades require at least 1 eligible Weapon equipped
   if (eqType === 'Upgrade') {
-    const hasWeapon = equippedRefs.some((r) => getEffectiveEquipmentType(r) === 'Weapon');
-    if (!hasWeapon) {
+    const equippedWeapons = equippedItems
+      .map((item) => ({
+        item,
+        ref: rules.equipment.find((e) => e.id === item.equipmentId),
+      }))
+      .filter(
+        (w): w is { item: EquippedOrStashedItem; ref: EquipmentRef } =>
+          Boolean(w.ref && getEffectiveEquipmentType(w.ref) === 'Weapon')
+      );
+
+    if (equippedWeapons.length === 0) {
       return {
         valid: false,
-        reason: 'Weapon Upgrades must be applied to an equipped Weapon.',
+        reason: 'Weapon Upgrades must be applied to an equipped Weapon (equip a Weapon first).',
       };
     }
+
+    const eligibleWeapons = equippedWeapons.filter(
+      (w) => isEligibleWeaponForUpgrade(w.item, w.ref, eq.id).eligible
+    );
+    if (eligibleWeapons.length === 0) {
+      return {
+        valid: false,
+        reason: `All equipped Weapons on ${fighter.name} already have ${eq.name}.`,
+      };
+    }
+
     return { valid: true, suggestedSlot: 'Weapon Upgrade' };
   }
 
@@ -1546,7 +1629,11 @@ export function computeFighterCombatBreakdown(
   const hasSuperiorBlackPowder = equippedPairs.some(
     (p) => p.eq.id === 'eq-superior-black-powder'
   );
-  const hasMalleus = equippedPairs.some((p) => p.eq.id === 'eq-malleus-maleficarum');
+  const hasLegacyMalleusItem = equippedPairs.some(
+    (p) => p.eq.id === 'eq-malleus-maleficarum'
+  );
+  const malleusWeapons = equippedPairs.filter((p) => Boolean(p.item.isMalleusMaleficarum));
+  const hasMalleus = hasLegacyMalleusItem || malleusWeapons.length > 0;
 
   const meleeWeapons = equippedPairs.filter(
     (p) => getEffectiveEquipmentType(p.eq) === 'Weapon' && p.eq.category !== 'Ranged Weapon' && !p.eq.range
@@ -1593,8 +1680,9 @@ export function computeFighterCombatBreakdown(
     for (const { item, eq } of meleeWeapons) {
       const { bonus, note } = getMeleeWeaponStrongBonus(eq.id);
       const net = netBaseStrong + bonus;
+      const weaponHasMalleus = Boolean(item.isMalleusMaleficarum) || hasLegacyMalleusItem;
       weaponSummaries.push({
-        weaponName: item.customName || eq.name,
+        weaponName: formatItemDisplayName(item, eq),
         weaponType: 'Melee',
         netStrong: net,
         label: formatStrongWeakLabel(net),
@@ -1602,7 +1690,10 @@ export function computeFighterCombatBreakdown(
         note: [
           bonus > 0 ? `+${bonus} Weapon Strong` : undefined,
           note,
-          hasMalleus ? '+2 Strong vs Magic-users/Uncanny (Malleus Maleficarum)' : undefined,
+          item.isMasterSmithed ? 'Master-smithed (+1 Strike)' : undefined,
+          weaponHasMalleus
+            ? '+2 Strong vs Magic-users/Uncanny (Malleus Maleficarum)'
+            : undefined,
         ]
           .filter(Boolean)
           .join(' • '),
@@ -1611,6 +1702,7 @@ export function computeFighterCombatBreakdown(
   }
 
   for (const { item, eq } of rangedWeapons) {
+    const weaponHasMalleus = Boolean(item.isMalleusMaleficarum) || hasLegacyMalleusItem;
     const isCrossbowOrBlackPowder =
       eq.id === 'eq-light-crossbow' ||
       eq.id === 'eq-heavy-crossbow' ||
@@ -1641,8 +1733,14 @@ export function computeFighterCombatBreakdown(
       if (eq.isBlackPowder && hasSuperiorBlackPowder) {
         note += ' • +1 Strong with Superior Black Powder';
       }
+      if (item.isMasterSmithed) {
+        note += ' • Master-smithed (+1 Ranged)';
+      }
+      if (weaponHasMalleus) {
+        note += ' • +2 Strong vs Magic-users/Uncanny (Malleus Maleficarum)';
+      }
       weaponSummaries.push({
-        weaponName: item.customName || eq.name,
+        weaponName: formatItemDisplayName(item, eq),
         weaponType: 'Ranged',
         netStrong: fixedStrong,
         label: formatStrongWeakLabel(fixedStrong),
@@ -1651,7 +1749,7 @@ export function computeFighterCombatBreakdown(
       });
     } else if (eq.id === 'eq-cheirosiphon') {
       weaponSummaries.push({
-        weaponName: item.customName || eq.name,
+        weaponName: formatItemDisplayName(item, eq),
         weaponType: 'Ranged',
         netStrong: 0,
         label: 'Special (d8/d12/d20)',
@@ -1667,13 +1765,22 @@ export function computeFighterCombatBreakdown(
           : eq.id === 'eq-sling' && hasLeadSlingshot
           ? '+1 Strong if using Lead Slingshot'
           : undefined;
+      const combinedNote = [
+        ammoNote,
+        item.isMasterSmithed ? 'Master-smithed (+1 Ranged)' : undefined,
+        weaponHasMalleus
+          ? '+2 Strong vs Magic-users/Uncanny (Malleus Maleficarum)'
+          : undefined,
+      ]
+        .filter(Boolean)
+        .join(' • ');
       weaponSummaries.push({
-        weaponName: item.customName || eq.name,
+        weaponName: formatItemDisplayName(item, eq),
         weaponType: 'Ranged',
         netStrong: netBaseStrong,
         label: formatStrongWeakLabel(netBaseStrong),
         ignoresModelStrong: false,
-        note: ammoNote,
+        note: combinedNote || undefined,
       });
     }
   }
@@ -1685,7 +1792,7 @@ export function computeFighterCombatBreakdown(
     if (bonus > 0) {
       strongEntries.push({
         id: `str-wpn-${firstMelee.item.instanceId}`,
-        source: `Equipped (${firstMelee.item.customName || firstMelee.eq.name}): Strong (${bonus})`,
+        source: `Equipped (${formatItemDisplayName(firstMelee.item, firstMelee.eq)}): Strong (${bonus})`,
         category: 'Equipment',
         value: bonus,
         unit: 'strong',
@@ -1693,9 +1800,15 @@ export function computeFighterCombatBreakdown(
     }
   }
   if (hasMalleus) {
+    const malleusLabel =
+      malleusWeapons.length > 0
+        ? `Malleus Maleficarum (${malleusWeapons
+            .map((w) => w.item.customName || w.eq.name)
+            .join(', ')}): +2 Strong vs Magic-users & Uncanny`
+        : 'Malleus Maleficarum: +2 Strong vs Magic-users & Uncanny';
     strongEntries.push({
       id: 'str-malleus',
-      source: 'Malleus Maleficarum: +2 Strong vs Magic-users & Uncanny',
+      source: malleusLabel,
       category: 'Situational',
       value: 2,
       unit: 'strong',
@@ -1917,9 +2030,14 @@ export function computeFighterCombatBreakdown(
   const hasAxeOfSlaughter = equippedPairs.some(
     (p) => p.eq.id === 'eq-relic-axe-slaughter'
   );
-  const hasMasterSmithed = equippedPairs.some(
+  const hasLegacyMasterSmithed = equippedPairs.some(
     (p) => p.eq.id === 'eq-master-smithed-upgrade'
   );
+  const hasMasterSmithedMelee =
+    meleeWeapons.some((w) => Boolean(w.item.isMasterSmithed)) || hasLegacyMasterSmithed;
+  const hasMasterSmithedRanged =
+    rangedWeapons.some((w) => Boolean(w.item.isMasterSmithed)) ||
+    (hasLegacyMasterSmithed && meleeWeapons.length === 0);
   const hasBodyArmour = equippedPairs.some(
     (p) =>
       p.eq.isBodyArmour ||
@@ -2106,10 +2224,12 @@ export function computeFighterCombatBreakdown(
             unit: 'roll',
           });
         }
-        if (hasMasterSmithed) {
+        if (hasMasterSmithedMelee) {
+          const msMelee =
+            meleeWeapons.find((w) => Boolean(w.item.isMasterSmithed)) || primary;
           activeEntries.push({
             id: 'strk-master-smithed',
-            source: 'Weapon (Master-smithed) Upgrade',
+            source: `${msMelee.item.customName || msMelee.eq.name} (Master-smithed: +1 Strike)`,
             category: 'Equipment',
             value: 1,
             unit: 'roll',
@@ -2376,15 +2496,17 @@ export function computeFighterCombatBreakdown(
             unit: 'roll',
           });
         }
-        if (hasMasterSmithed && meleeWeapons.length === 0) {
+        if (hasMasterSmithedRanged) {
+          const msRanged =
+            rangedWeapons.find((w) => Boolean(w.item.isMasterSmithed)) || primaryRanged;
           activeEntries.push({
             id: 'rng-master-smithed',
-            source: 'Weapon (Master-smithed) Upgrade',
+            source: `${msRanged.item.customName || msRanged.eq.name} (Master-smithed: +1 Ranged)`,
             category: 'Equipment',
             value: 1,
             unit: 'roll',
           });
-        } else if (hasMasterSmithed && meleeWeapons.length > 0) {
+        } else if (hasLegacyMasterSmithed && meleeWeapons.length > 0) {
           situationalEntries.push({
             id: 'rng-master-smithed-sit',
             source: 'Weapon (Master-smithed) Upgrade (if on Missile Weapon)',

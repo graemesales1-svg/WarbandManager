@@ -14,6 +14,7 @@ import {
   StatNumericModifiers,
 } from '../types/game';
 import {
+  applyWeaponUpgradeToItem,
   calculateWarbandPennyValue,
   calculateWarbandRating,
   computeFighterStats,
@@ -33,7 +34,9 @@ import {
   getStartingFatePointsForRole,
   getSkillOrSpellPageReference,
   getValidSlotsForEquipment,
+  isEligibleWeaponForUpgrade,
   isEquipmentStackable,
+  isWeaponUpgradeEquipment,
   MAX_FIGHTER_FATE_POINTS,
   StatKey,
   stepDie,
@@ -292,6 +295,7 @@ export const WarbandRosterView: React.FC = () => {
   >('all');
   const [recruitEqId, setRecruitEqId] = useState<string>('eq-one-handed');
   const [recruitEqSlot, setRecruitEqSlot] = useState<EquipmentSlot>('Weapon 1');
+  const [recruitTargetWeaponId, setRecruitTargetWeaponId] = useState<string>('');
   const [recruitEqQuantity, setRecruitEqQuantity] = useState<number>(1);
   const [recruitEqCustomName, setRecruitEqCustomName] = useState<string>('');
   const [overrideRecruitGearRestrictions, setOverrideRecruitGearRestrictions] =
@@ -315,6 +319,7 @@ export const WarbandRosterView: React.FC = () => {
   const [buySlot, setBuySlot] = useState<EquipmentSlot>(
     sortedEquipment[0]?.defaultSlot || 'Weapon 1'
   );
+  const [buyTargetWeaponId, setBuyTargetWeaponId] = useState<string>('');
   const [buyQuantity, setBuyQuantity] = useState(1);
   const [buyCustomName, setBuyCustomName] = useState('');
   const [freeGrant, setFreeGrant] = useState(false);
@@ -479,6 +484,7 @@ export const WarbandRosterView: React.FC = () => {
     setRecruitGearFilter('all');
     setRecruitEqId('eq-one-handed');
     setRecruitEqSlot('Weapon 1');
+    setRecruitTargetWeaponId('');
     setRecruitEqQuantity(1);
     setRecruitEqCustomName('');
     setOverrideRecruitGearRestrictions(false);
@@ -516,6 +522,39 @@ export const WarbandRosterView: React.FC = () => {
           allegiance?.name || 'this warband'
         }. Check "Override equipment & rarity restrictions" to add it anyway.`
       );
+      return;
+    }
+
+    if (isWeaponUpgradeEquipment(eq)) {
+      const eligibleRecruitWeapons = recruitItems.filter((item) => {
+        const wEq = rules.equipment.find((e) => e.id === item.equipmentId);
+        return isEligibleWeaponForUpgrade(item, wEq, eq.id);
+      });
+      if (eligibleRecruitWeapons.length === 0) {
+        alert(
+          `Please add an eligible Weapon to ${previewRecruitFighter.name}'s starting loadout first before applying ${eq.name}.`
+        );
+        return;
+      }
+      if (eqToAdd && eligibleRecruitWeapons.length > 1) {
+        setRecruitEqId(eq.id);
+        setRecruitTargetWeaponId(eligibleRecruitWeapons[0].instanceId);
+        return;
+      }
+      const targetWeapon =
+        eligibleRecruitWeapons.find((w) => w.instanceId === recruitTargetWeaponId) ||
+        eligibleRecruitWeapons[0];
+      const unitCost = costMeta.cost;
+      const upgradedWeapon = applyWeaponUpgradeToItem(targetWeapon, eq.id, unitCost);
+      if (!eqToAdd && recruitEqCustomName.trim()) {
+        upgradedWeapon.customName = recruitEqCustomName.trim();
+      }
+      setRecruitItems((prev) =>
+        prev.map((i) => (i.instanceId === targetWeapon.instanceId ? upgradedWeapon : i))
+      );
+      if (!eqToAdd) {
+        setRecruitEqCustomName('');
+      }
       return;
     }
 
@@ -1062,6 +1101,70 @@ export const WarbandRosterView: React.FC = () => {
     const eq = rules.equipment.find((x) => x.id === buyEqId);
     if (!eq) return;
 
+    if (isWeaponUpgradeEquipment(eq)) {
+      const eligibleWeapons = activeWarband.inventory.filter((item) => {
+        if (item.assignedFighterId !== selectedFighterForGear.id) return false;
+        const wEq = rules.equipment.find((e) => e.id === item.equipmentId);
+        return isEligibleWeaponForUpgrade(item, wEq, eq.id);
+      });
+      const targetWeapon =
+        eligibleWeapons.find((w) => w.instanceId === buyTargetWeaponId) ||
+        eligibleWeapons[0];
+      if (!targetWeapon) {
+        alert(
+          `${selectedFighterForGear.name} does not have an eligible weapon equipped to apply ${eq.name} to. Equip a weapon first!`
+        );
+        return;
+      }
+
+      const unitCost = getEquipmentCostForAllegiance(eq, allegiance).cost;
+      const treasuryCost = freeGrant ? 0 : unitCost;
+      if (treasuryCost > activeWarband.treasuryPennies) {
+        alert(
+          `Insufficient Pennies (${activeWarband.treasuryPennies}p in Treasury, ${treasuryCost}p needed for ${eq.name}).`
+        );
+        return;
+      }
+
+      const targetWeaponEq = rules.equipment.find(
+        (e) => e.id === targetWeapon.equipmentId
+      );
+      const targetWeaponLabel = formatItemDisplayName(targetWeapon, targetWeaponEq);
+      const upgradedWeapon = applyWeaponUpgradeToItem(
+        targetWeapon,
+        eq.id,
+        unitCost
+      );
+      if (buyCustomName.trim()) {
+        upgradedWeapon.customName = buyCustomName.trim();
+      }
+
+      const nextInventory = activeWarband.inventory.map((i) =>
+        i.instanceId === targetWeapon.instanceId ? upgradedWeapon : i
+      );
+      const newBalance = activeWarband.treasuryPennies - treasuryCost;
+      await saveWarband({
+        ...activeWarband,
+        treasuryPennies: newBalance,
+        inventory: nextInventory,
+        treasuryLog:
+          treasuryCost > 0
+            ? [
+                {
+                  id: crypto.randomUUID(),
+                  date: new Date().toISOString().slice(0, 10),
+                  deltaPennies: -treasuryCost,
+                  reason: `Purchased ${eq.name} for ${selectedFighterForGear.name}'s ${targetWeaponLabel}`,
+                  balanceAfter: newBalance,
+                },
+                ...activeWarband.treasuryLog,
+              ]
+            : activeWarband.treasuryLog,
+      });
+      setBuyCustomName('');
+      return;
+    }
+
     const stackable = isEquipmentStackable(eq);
     const qty = stackable ? Math.max(1, Math.min(99, buyQuantity || 1)) : 1;
 
@@ -1151,6 +1254,28 @@ export const WarbandRosterView: React.FC = () => {
     });
     setBuyCustomName('');
     setBuyQuantity(1);
+  };
+
+  const handleAttachLegacyUpgradeToWeapon = async (
+    upgradeItem: EquippedOrStashedItem,
+    targetWeaponId: string
+  ) => {
+    const targetWeapon = activeWarband.inventory.find(
+      (i) => i.instanceId === targetWeaponId
+    );
+    if (!targetWeapon) return;
+    const upgradedWeapon = applyWeaponUpgradeToItem(
+      targetWeapon,
+      upgradeItem.equipmentId,
+      upgradeItem.purchaseCost
+    );
+    const nextInventory = activeWarband.inventory
+      .filter((i) => i.instanceId !== upgradeItem.instanceId)
+      .map((i) => (i.instanceId === targetWeapon.instanceId ? upgradedWeapon : i));
+    await saveWarband({
+      ...activeWarband,
+      inventory: nextInventory,
+    });
   };
 
   const handleAdjustStackQuantity = async (
@@ -3480,22 +3605,84 @@ export const WarbandRosterView: React.FC = () => {
                               </div>
 
                               <div className="sm:col-span-3">
-                                <label className="block text-[11px] text-stone-400 mb-1">
-                                  Slot
-                                </label>
-                                <select
-                                  value={recruitEqSlot}
-                                  onChange={(e) =>
-                                    setRecruitEqSlot(e.target.value as EquipmentSlot)
-                                  }
-                                  className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2 py-1.5 text-xs"
-                                >
-                                  {recruitSlotOptions.map((slotOpt) => (
-                                    <option key={slotOpt} value={slotOpt}>
-                                      {slotOpt}
-                                    </option>
-                                  ))}
-                                </select>
+                                {selectedRecruitEq &&
+                                isWeaponUpgradeEquipment(selectedRecruitEq) ? (
+                                  (() => {
+                                    const eligibleRecruitWeapons = recruitItems.filter(
+                                      (item) => {
+                                        const wEq = rules.equipment.find(
+                                          (e) => e.id === item.equipmentId
+                                        );
+                                        return isEligibleWeaponForUpgrade(
+                                          item,
+                                          wEq,
+                                          selectedRecruitEq.id
+                                        );
+                                      }
+                                    );
+                                    const effectiveTargetId =
+                                      eligibleRecruitWeapons.find(
+                                        (w) => w.instanceId === recruitTargetWeaponId
+                                      )?.instanceId ||
+                                      eligibleRecruitWeapons[0]?.instanceId ||
+                                      '';
+                                    return (
+                                      <>
+                                        <label className="block text-[11px] text-amber-300 font-semibold mb-1">
+                                          Target Weapon to Upgrade
+                                        </label>
+                                        <select
+                                          value={effectiveTargetId}
+                                          onChange={(e) =>
+                                            setRecruitTargetWeaponId(e.target.value)
+                                          }
+                                          disabled={eligibleRecruitWeapons.length === 0}
+                                          className="w-full bg-stone-900 border border-amber-600/70 rounded-lg px-2 py-1.5 text-xs text-amber-200"
+                                        >
+                                          {eligibleRecruitWeapons.length === 0 ? (
+                                            <option value="">
+                                              Add a Weapon first...
+                                            </option>
+                                          ) : (
+                                            eligibleRecruitWeapons.map((wItem) => {
+                                              const wEq = rules.equipment.find(
+                                                (e) => e.id === wItem.equipmentId
+                                              );
+                                              return (
+                                                <option
+                                                  key={wItem.instanceId}
+                                                  value={wItem.instanceId}
+                                                >
+                                                  {formatItemDisplayName(wItem, wEq)} (
+                                                  {wItem.slot})
+                                                </option>
+                                              );
+                                            })
+                                          )}
+                                        </select>
+                                      </>
+                                    );
+                                  })()
+                                ) : (
+                                  <>
+                                    <label className="block text-[11px] text-stone-400 mb-1">
+                                      Slot
+                                    </label>
+                                    <select
+                                      value={recruitEqSlot}
+                                      onChange={(e) =>
+                                        setRecruitEqSlot(e.target.value as EquipmentSlot)
+                                      }
+                                      className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2 py-1.5 text-xs"
+                                    >
+                                      {recruitSlotOptions.map((slotOpt) => (
+                                        <option key={slotOpt} value={slotOpt}>
+                                          {slotOpt}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </>
+                                )}
                               </div>
 
                               <div className="sm:col-span-2">
@@ -3504,7 +3691,10 @@ export const WarbandRosterView: React.FC = () => {
                                   onClick={() => handleAddRecruitGear()}
                                   className="w-full py-1.5 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-stone-950 font-bold text-xs cursor-pointer"
                                 >
-                                  + Add
+                                  {selectedRecruitEq &&
+                                  isWeaponUpgradeEquipment(selectedRecruitEq)
+                                    ? '+ Upgrade'
+                                    : '+ Add'}
                                 </button>
                               </div>
                             </div>
@@ -4045,26 +4235,74 @@ export const WarbandRosterView: React.FC = () => {
                       {gearSlotOcc.weaponUpgrades.length > 0 && (
                         <div className="bg-amber-950/20 border border-amber-800/50 rounded-xl p-2.5 text-xs space-y-1.5">
                           <div className="font-semibold text-amber-300">
-                            Weapon Upgrades &amp; Extra Gear
+                            Unattached Weapon Upgrades &amp; Extra Gear
                           </div>
-                          <ul className="space-y-1">
+                          <ul className="space-y-1.5">
                             {gearSlotOcc.weaponUpgrades.map((uItem) => {
                               const eq = rules.equipment.find(
                                 (e) => e.id === uItem.equipmentId
                               );
+                              const eligibleForLegacyAttach = isWeaponUpgradeEquipment(eq)
+                                ? activeWarband.inventory.filter((wItem) => {
+                                    if (wItem.assignedFighterId !== liveFighter.id)
+                                      return false;
+                                    const wEq = rules.equipment.find(
+                                      (e) => e.id === wItem.equipmentId
+                                    );
+                                    return isEligibleWeaponForUpgrade(
+                                      wItem,
+                                      wEq,
+                                      uItem.equipmentId
+                                    );
+                                  })
+                                : [];
                               return (
                                 <li
                                   key={uItem.instanceId}
-                                  className="flex items-center justify-between text-[11px] text-stone-200"
+                                  className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-stone-200"
                                 >
                                   <span>{formatItemDisplayName(uItem, eq)}</span>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleMoveItem(uItem.instanceId, null)}
-                                    className="px-1.5 py-0.5 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 cursor-pointer"
-                                  >
-                                    Stash
-                                  </button>
+                                  <div className="flex items-center gap-1.5">
+                                    {eligibleForLegacyAttach.length > 0 && (
+                                      <select
+                                        defaultValue=""
+                                        onChange={(e) => {
+                                          if (e.target.value) {
+                                            handleAttachLegacyUpgradeToWeapon(
+                                              uItem,
+                                              e.target.value
+                                            );
+                                          }
+                                        }}
+                                        className="bg-stone-900 border border-amber-600/70 rounded px-1.5 py-0.5 text-[10px] text-amber-200"
+                                      >
+                                        <option value="" disabled>
+                                          Attach to Weapon...
+                                        </option>
+                                        {eligibleForLegacyAttach.map((wItem) => {
+                                          const wEq = rules.equipment.find(
+                                            (e) => e.id === wItem.equipmentId
+                                          );
+                                          return (
+                                            <option
+                                              key={wItem.instanceId}
+                                              value={wItem.instanceId}
+                                            >
+                                              {formatItemDisplayName(wItem, wEq)} (
+                                              {wItem.slot})
+                                            </option>
+                                          );
+                                        })}
+                                      </select>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleMoveItem(uItem.instanceId, null)}
+                                      className="px-1.5 py-0.5 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 cursor-pointer"
+                                    >
+                                      Stash
+                                    </button>
+                                  </div>
                                 </li>
                               );
                             })}
@@ -4235,20 +4473,77 @@ export const WarbandRosterView: React.FC = () => {
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs text-stone-400 mb-1">
-                        Equip Slot
-                      </label>
-                      <select
-                        value={buySlot}
-                        onChange={(e) => setBuySlot(e.target.value as EquipmentSlot)}
-                        className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2 py-1.5 text-xs"
-                      >
-                        {all2eSlotOptions.map((slotOpt) => (
-                          <option key={slotOpt} value={slotOpt}>
-                            {slotOpt}
-                          </option>
-                        ))}
-                      </select>
+                      {selectedBuyEq && isWeaponUpgradeEquipment(selectedBuyEq) ? (
+                        (() => {
+                          const eligibleBuyWeapons = activeWarband.inventory.filter(
+                            (wItem) => {
+                              if (wItem.assignedFighterId !== liveFighter.id) return false;
+                              const wEq = rules.equipment.find(
+                                (e) => e.id === wItem.equipmentId
+                              );
+                              return isEligibleWeaponForUpgrade(
+                                wItem,
+                                wEq,
+                                selectedBuyEq.id
+                              );
+                            }
+                          );
+                          const effectiveTargetId =
+                            eligibleBuyWeapons.find(
+                              (w) => w.instanceId === buyTargetWeaponId
+                            )?.instanceId ||
+                            eligibleBuyWeapons[0]?.instanceId ||
+                            '';
+                          return (
+                            <>
+                              <label className="block text-xs text-amber-300 font-semibold mb-1">
+                                Target Weapon to Upgrade
+                              </label>
+                              <select
+                                value={effectiveTargetId}
+                                onChange={(e) => setBuyTargetWeaponId(e.target.value)}
+                                disabled={eligibleBuyWeapons.length === 0}
+                                className="w-full bg-stone-900 border border-amber-600/70 rounded-lg px-2 py-1.5 text-xs text-amber-200"
+                              >
+                                {eligibleBuyWeapons.length === 0 ? (
+                                  <option value="">No eligible weapon equipped</option>
+                                ) : (
+                                  eligibleBuyWeapons.map((wItem) => {
+                                    const wEq = rules.equipment.find(
+                                      (e) => e.id === wItem.equipmentId
+                                    );
+                                    return (
+                                      <option
+                                        key={wItem.instanceId}
+                                        value={wItem.instanceId}
+                                      >
+                                        {formatItemDisplayName(wItem, wEq)} ({wItem.slot})
+                                      </option>
+                                    );
+                                  })
+                                )}
+                              </select>
+                            </>
+                          );
+                        })()
+                      ) : (
+                        <>
+                          <label className="block text-xs text-stone-400 mb-1">
+                            Equip Slot
+                          </label>
+                          <select
+                            value={buySlot}
+                            onChange={(e) => setBuySlot(e.target.value as EquipmentSlot)}
+                            className="w-full bg-stone-900 border border-stone-700 rounded-lg px-2 py-1.5 text-xs"
+                          >
+                            {all2eSlotOptions.map((slotOpt) => (
+                              <option key={slotOpt} value={slotOpt}>
+                                {slotOpt}
+                              </option>
+                            ))}
+                          </select>
+                        </>
+                      )}
                     </div>
                   </div>
 
@@ -4362,15 +4657,27 @@ export const WarbandRosterView: React.FC = () => {
                       type="submit"
                       className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-stone-950 font-bold text-xs cursor-pointer shrink-0"
                     >
-                      Buy &amp; Equip
-                      {selectedBuyEq && isEquipmentStackable(selectedBuyEq) && buyQuantity > 1
-                        ? ` (×${buyQuantity} — ${
+                      {selectedBuyEq && isWeaponUpgradeEquipment(selectedBuyEq)
+                        ? `Buy & Apply Upgrade (${
                             freeGrant
                               ? 0
-                              : getEquipmentCostForAllegiance(selectedBuyEq, allegiance).cost *
-                                buyQuantity
+                              : getEquipmentCostForAllegiance(selectedBuyEq, allegiance)
+                                  .cost
                           }p)`
-                        : ''}
+                        : `Buy & Equip${
+                            selectedBuyEq &&
+                            isEquipmentStackable(selectedBuyEq) &&
+                            buyQuantity > 1
+                              ? ` (×${buyQuantity} — ${
+                                  freeGrant
+                                    ? 0
+                                    : getEquipmentCostForAllegiance(
+                                        selectedBuyEq,
+                                        allegiance
+                                      ).cost * buyQuantity
+                                }p)`
+                              : ''
+                          }`}
                     </button>
                   </div>
                 </form>
