@@ -486,6 +486,126 @@ export function getSkillOrSpellPageReference(entry: SkillOrSpellRef): string {
   }
 }
 
+const EQUIPMENT_PAGE_MAP: Record<string, string> = {
+  // Melee Weapons (Pages 98–99)
+  'eq-one-handed': 'Page 98',
+  'eq-two-handed': 'Page 99',
+  'eq-pole-arm': 'Page 99',
+  'eq-spear': 'Page 99',
+  'eq-rondel-dagger': 'Page 99',
+
+  // Missile Weapons (Pages 99–103)
+  'eq-bow': 'Page 100',
+  'eq-war-bow': 'Page 100',
+  'eq-light-crossbow': 'Page 100',
+  'eq-heavy-crossbow': 'Page 101',
+  'eq-sling': 'Page 101',
+  'eq-throwing-knives': 'Page 101',
+  'eq-pistol': 'Page 102',
+  'eq-blunderbuss': 'Page 102',
+  'eq-caliver': 'Page 102',
+  'eq-cheirosiphon': 'Page 103',
+
+  // Weapon Upgrades (Page 103)
+  'eq-master-smithed-upgrade': 'Page 103',
+  'eq-malleus-maleficarum': 'Page 103',
+
+  // Armour & Shields (Pages 105–106, 112)
+  'eq-light-armour': 'Page 105',
+  'eq-heavy-armour': 'Page 105',
+  'eq-very-heavy-armour': 'Page 105',
+  'eq-buckler': 'Page 106',
+  'eq-light-shield': 'Page 106',
+  'eq-heavy-shield': 'Page 106',
+  'eq-silk-undershirt': 'Page 112',
+
+  // Ammunition, Items, Potions & Poisons (Pages 106–117)
+  'eq-broadhead-arrows': 'Page 107',
+  'eq-bodkin-arrows': 'Page 107',
+  'eq-lead-slingshot': 'Page 108',
+  'eq-superior-black-powder': 'Page 108',
+  'eq-focus': 'Page 110',
+  'eq-mages-pouch': 'Page 110',
+  'eq-grappling-hook': 'Page 110',
+  'eq-lucky-charm': 'Page 109',
+  'eq-talisman': 'Page 109',
+  'eq-healing-potion': 'Page 108',
+  'eq-camouflage-cloak': 'Page 111',
+  'eq-scent-masker': 'Page 112',
+  'eq-torch': 'Page 111',
+  'eq-lantern': 'Page 111',
+  'eq-caltrops': 'Page 112',
+  'eq-inspiring-object': 'Page 113',
+  'eq-tangle-net': 'Page 113',
+  'eq-signature-item': 'Page 110',
+  'eq-materials': 'Page 177',
+  'eq-dispel-scroll': 'Page 114',
+  'eq-shielding-talisman': 'Page 114',
+  'eq-mirroring-talisman': 'Page 115',
+  'eq-blind-dust': 'Page 115',
+  'eq-telescope': 'Page 115',
+  'eq-berserker-seeds': 'Page 116',
+  'eq-old-one-brews': 'Page 116',
+  'eq-pain-poison': 'Page 116',
+  'eq-paralysing-poison': 'Page 116',
+  'eq-mortal-poison': 'Page 117',
+  'eq-relic': 'Page 115',
+  'eq-antidote': 'Page 117',
+  'eq-grimoire': 'Page 117',
+  'eq-bagpipes': 'Page 60',
+
+  // Bonded Critters (Pages 113–114)
+  'eq-critter-hornet': 'Page 113',
+  'eq-critter-centipede': 'Page 114',
+  'eq-critter-spider': 'Page 114',
+  'eq-critter-beetle': 'Page 114',
+  'eq-critter-bonded-grub': 'Page 114',
+
+  // Special Magic Equipment & Enchanted Equipment (Pages 118–122)
+  'eq-relic-armour-ultimate-protection': 'Page 118',
+  'eq-relic-thirsting-blade': 'Page 118',
+  'eq-relic-axe-slaughter': 'Page 118',
+  'eq-relic-belt-balmorr': 'Page 118',
+  'eq-relic-masters-bow': 'Page 118',
+  'eq-relic-haldyns-staff': 'Page 118',
+  'eq-relic-tome-all-knowing': 'Page 118',
+  'eq-relic-father-of-swords': 'Page 118',
+  'eq-relic-serpents-ring': 'Page 119',
+  'eq-relic-selnabs-necklace': 'Page 119',
+  'eq-relic-shield-attraction': 'Page 119',
+  'eq-relic-ring-resistance': 'Page 119',
+  'eq-enchanted-equipment': 'Pages 120–122',
+};
+
+/**
+ * Returns the official Burrows & Badgers 2nd Edition Rulebook page reference for an Equipment item.
+ */
+export function getEquipmentPageReference(eq?: EquipmentRef | null): string {
+  if (!eq) return 'Pages 98–122';
+  if (EQUIPMENT_PAGE_MAP[eq.id]) return EQUIPMENT_PAGE_MAP[eq.id];
+  if (eq.id.startsWith('eq-ing-')) return 'Page 178';
+  if (eq.id.startsWith('eq-critter-')) return 'Pages 113–114';
+  if (eq.id.startsWith('eq-relic-')) return 'Pages 118–119';
+  switch (eq.category) {
+    case 'One-Handed Weapon':
+    case 'Double-Handed Weapon':
+      return 'Pages 98–99';
+    case 'Ranged Weapon':
+      return 'Pages 99–103';
+    case 'Armour':
+    case 'Shield':
+      return 'Pages 105–106';
+    case 'Magical Ingredient':
+      return 'Page 178';
+    case 'Bonded Critter / Grub':
+      return 'Pages 113–114';
+    case 'Rare & Relic':
+      return 'Pages 118–122';
+    default:
+      return 'Pages 106–117';
+  }
+}
+
 /**
  * How many roster Equipment Slots an item occupies for a given fighter.
  * Heavy & Very Heavy Armour take 2 Armour slots, unless the fighter has Born in Harness (1 slot).

@@ -24,8 +24,10 @@ import {
   formatSigned,
   getAllegianceStartingRareEquipment,
   getEarnedAdvancesCount,
+  getEffectiveEquipmentType,
   getEffectiveSlotsRequired,
   getEquipmentCostForAllegiance,
+  getEquipmentPageReference,
   getFighterFatePoints,
   getFighterSlotOccupancy,
   getItemQuantity,
@@ -47,6 +49,7 @@ import {
   ModalInspectTab,
 } from './StatRollAndBreakdownModal';
 import { SkillOrSpellDetailModal } from './SkillOrSpellDetailModal';
+import { EquipmentDetailModal } from './EquipmentDetailModal';
 import {
   UserPlus,
   Coins,
@@ -332,10 +335,10 @@ export const WarbandRosterView: React.FC = () => {
     fighterId: string;
     skillOrSpellId: string;
   } | null>(null);
-
-  // Item Custom Name Editing State
-  const [renamingItemId, setRenamingItemId] = useState<string | null>(null);
-  const [renameItemText, setRenameItemText] = useState('');
+  const [selectedEquipmentModal, setSelectedEquipmentModal] = useState<{
+    fighterId: string | null;
+    itemInstanceId: string;
+  } | null>(null);
 
   // Den Name Editing State
   const [isEditingDenName, setIsEditingDenName] = useState(false);
@@ -1053,18 +1056,11 @@ export const WarbandRosterView: React.FC = () => {
     setFighterToDismiss(null);
   };
 
-  const handleStartRenameItem = (item: EquippedOrStashedItem) => {
-    setRenamingItemId(item.instanceId);
-    setRenameItemText(item.customName || '');
-  };
-
   const handleSaveItemCustomName = async (
     instanceId: string,
-    overrideName?: string
+    customName: string
   ) => {
-    const trimmed = (
-      overrideName !== undefined ? overrideName : renameItemText
-    ).trim();
+    const trimmed = customName.trim();
     const updatedInventory = activeWarband.inventory.map((item) =>
       item.instanceId === instanceId
         ? { ...item, customName: trimmed || undefined }
@@ -1074,8 +1070,6 @@ export const WarbandRosterView: React.FC = () => {
       ...activeWarband,
       inventory: updatedInventory,
     });
-    setRenamingItemId(null);
-    setRenameItemText('');
   };
 
   const handleStartEditDenName = () => {
@@ -2263,118 +2257,65 @@ export const WarbandRosterView: React.FC = () => {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
                 {/* Gear */}
                 <div className="bg-stone-950/60 border border-stone-800/80 rounded-xl p-3">
-                  <div className="text-stone-400 font-semibold mb-1.5 flex items-center justify-between">
+                  <div className="text-stone-400 font-semibold mb-1.5 flex items-center justify-between gap-1.5">
                     <span className="flex items-center gap-1.5">
                       <Sword className="w-3.5 h-3.5 text-amber-400" /> Equipped Gear (
                       {slotOcc.usedMainSlots}/{slotOcc.maxMainSlots} slots)
                     </span>
-                    <button
-                      onClick={() => setSelectedFighterForGear(fighter)}
-                      className="text-[11px] text-amber-400 hover:underline cursor-pointer"
-                    >
-                      + Manage
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-normal text-stone-500 italic hidden sm:inline">
+                        Tap badge for rules &amp; name
+                      </span>
+                      <button
+                        onClick={() => setSelectedFighterForGear(fighter)}
+                        className="text-[11px] text-amber-400 hover:underline cursor-pointer"
+                      >
+                        + Manage
+                      </button>
+                    </div>
                   </div>
                   {equipped.length === 0 ? (
-                    <p className="text-stone-500 italic">Unarmed & Unarmoured</p>
+                    <p className="text-stone-500 italic">Unarmed &amp; Unarmoured</p>
                   ) : (
-                    <ul className="space-y-1.5">
+                    <div className="flex flex-wrap gap-1.5">
                       {equipped.map((item) => {
                         const eqRef = rules.equipment.find(
                           (e) => e.id === item.equipmentId
                         );
-                        const slotsUsed = eqRef
-                          ? getEffectiveSlotsRequired(eqRef, fighter, rules)
-                          : 1;
-                        const isRenamingThis = renamingItemId === item.instanceId;
+                        const eqType = eqRef ? getEffectiveEquipmentType(eqRef) : 'Item';
+                        const pageRef = getEquipmentPageReference(eqRef).replace(
+                          'Page ',
+                          'p.'
+                        );
                         return (
-                          <li
+                          <button
                             key={item.instanceId}
-                            className="space-y-1 text-stone-200"
+                            type="button"
+                            onClick={() =>
+                              setSelectedEquipmentModal({
+                                fighterId: fighter.id,
+                                itemInstanceId: item.instanceId,
+                              })
+                            }
+                            title={`${formatItemDisplayName(item, eqRef)} (${
+                              item.slot
+                            } • ${getEquipmentPageReference(eqRef)}): ${
+                              eqRef?.weaponModifiers || eqRef?.description || ''
+                            }`}
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border transition cursor-pointer ${
+                              eqType === 'Weapon'
+                                ? 'bg-amber-950/80 hover:bg-amber-900/80 text-amber-200 border-amber-700/60 hover:border-amber-400'
+                                : eqType === 'Armour'
+                                ? 'bg-sky-950/80 hover:bg-sky-900/80 text-sky-200 border-sky-700/60 hover:border-sky-400'
+                                : 'bg-stone-800 hover:bg-stone-700 text-stone-200 border-stone-700/80 hover:border-amber-500/60'
+                            }`}
                           >
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="min-w-0">
-                                <strong className="text-amber-200/90">
-                                  {formatItemDisplayName(item, eqRef)}
-                                </strong>{' '}
-                                <span className="text-stone-500 text-[11px]">
-                                  ({item.slot}
-                                  {slotsUsed > 1 ? ' • 2 Armour Slots' : ''})
-                                </span>
-                              </span>
-                              <div className="flex items-center gap-1 shrink-0">
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    isRenamingThis
-                                      ? setRenamingItemId(null)
-                                      : handleStartRenameItem(item)
-                                  }
-                                  className="text-[10px] px-1.5 py-0.5 rounded bg-stone-800 hover:bg-stone-700 text-amber-300 flex items-center gap-0.5 cursor-pointer"
-                                  title="Set or edit custom name for this item"
-                                >
-                                  <Pencil className="w-2.5 h-2.5" />
-                                  <span>Name</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleMoveItem(item.instanceId, null)}
-                                  className="text-[10px] px-1.5 py-0.5 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 cursor-pointer"
-                                  title="Send to Den Stash"
-                                >
-                                  Stash
-                                </button>
-                              </div>
-                            </div>
-                            {isRenamingThis && (
-                              <div className="flex items-center gap-1 bg-stone-900 border border-amber-600/50 rounded-lg p-1.5">
-                                <input
-                                  type="text"
-                                  value={renameItemText}
-                                  onChange={(e) => setRenameItemText(e.target.value)}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                      e.preventDefault();
-                                      handleSaveItemCustomName(item.instanceId);
-                                    }
-                                    if (e.key === 'Escape') {
-                                      setRenamingItemId(null);
-                                    }
-                                  }}
-                                  placeholder={`Custom name for ${eqRef?.name || 'item'}...`}
-                                  autoFocus
-                                  className="flex-1 bg-stone-950 border border-stone-700 rounded px-2 py-1 text-[11px] text-stone-100"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => handleSaveItemCustomName(item.instanceId)}
-                                  className="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-stone-950 font-bold text-[10px] cursor-pointer"
-                                >
-                                  Save
-                                </button>
-                                {item.customName && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleSaveItemCustomName(item.instanceId, '')}
-                                    className="px-1.5 py-1 rounded bg-stone-800 hover:bg-red-950/60 text-red-300 text-[10px] cursor-pointer"
-                                    title="Clear custom name"
-                                  >
-                                    Clear
-                                  </button>
-                                )}
-                                <button
-                                  type="button"
-                                  onClick={() => setRenamingItemId(null)}
-                                  className="px-1.5 py-1 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 text-[10px] cursor-pointer"
-                                >
-                                  Cancel
-                                </button>
-                              </div>
-                            )}
-                          </li>
+                            <span>{formatItemDisplayName(item, eqRef)}</span>
+                            <span className="text-[9px] opacity-75">({pageRef})</span>
+                          </button>
                         );
                       })}
-                    </ul>
+                    </div>
                   )}
                 </div>
 
@@ -4026,9 +3967,14 @@ export const WarbandRosterView: React.FC = () => {
 
                 {/* Visual 2.0 Equipment Slots Grid (Weapon 1, Weapon 2, Armour 1, Armour 2, Item, Special, + Beast of Burden) */}
                 <div>
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-stone-400 mb-2">
-                    2.0 Equipment Slots ({gearSlotOcc.usedMainSlots}/{gearSlotOcc.maxMainSlots})
-                  </h4>
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-stone-400">
+                      2.0 Equipment Slots ({gearSlotOcc.usedMainSlots}/{gearSlotOcc.maxMainSlots})
+                    </h4>
+                    <span className="text-[11px] text-stone-400 italic">
+                      Tap any equipped item to view rules, upgrades &amp; rename
+                    </span>
+                  </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {Object.entries(gearSlotOcc.slotMap).map(([slotName, item]) => {
                       const eq = item
@@ -4040,10 +3986,9 @@ export const WarbandRosterView: React.FC = () => {
                         slotName === 'Armour 2' &&
                         gearSlotOcc.twoSlotArmourItem !== null &&
                         item?.instanceId === gearSlotOcc.twoSlotArmourItem.instanceId;
-                      const isRenamingSlotItem =
-                        item !== null &&
-                        !isSecondarySlotOfMultiSlotItem &&
-                        renamingItemId === item.instanceId;
+                      const pageRef = eq
+                        ? getEquipmentPageReference(eq).replace('Page ', 'p.')
+                        : '';
                       return (
                         <div
                           key={slotName}
@@ -4069,12 +4014,27 @@ export const WarbandRosterView: React.FC = () => {
                                 )}
                               </div>
                               {item ? (
-                                <div className="font-semibold text-amber-200 truncate">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setSelectedEquipmentModal({
+                                      fighterId: liveFighter.id,
+                                      itemInstanceId: item.instanceId,
+                                    })
+                                  }
+                                  title="Tap to view equipment rules, upgrades & edit custom name"
+                                  className="font-semibold text-amber-200 hover:text-amber-300 hover:underline text-left truncate block max-w-full cursor-pointer"
+                                >
                                   {formatItemDisplayName(item, eq)}
+                                  {pageRef ? (
+                                    <span className="ml-1 text-[10px] font-normal text-stone-400">
+                                      ({pageRef})
+                                    </span>
+                                  ) : null}
                                   {isSecondarySlotOfMultiSlotItem
                                     ? ' (Heavy/Very Heavy Armour)'
                                     : ''}
-                                </div>
+                                </button>
                               ) : (
                                 <div className="italic text-[11px]">Empty Slot</div>
                               )}
@@ -4114,19 +4074,6 @@ export const WarbandRosterView: React.FC = () => {
                                 )}
                                 <button
                                   type="button"
-                                  onClick={() =>
-                                    isRenamingSlotItem
-                                      ? setRenamingItemId(null)
-                                      : handleStartRenameItem(item)
-                                  }
-                                  className="px-2 py-1 rounded bg-stone-800 hover:bg-stone-700 text-amber-300 text-[11px] flex items-center gap-1 shrink-0 cursor-pointer"
-                                  title="Set or edit custom name for this item"
-                                >
-                                  <Pencil className="w-3 h-3" />
-                                  <span>Name</span>
-                                </button>
-                                <button
-                                  type="button"
                                   onClick={() => handleMoveItem(item.instanceId, null)}
                                   className="px-2 py-1 rounded bg-stone-800 hover:bg-stone-700 text-stone-200 text-[11px] shrink-0 cursor-pointer"
                                 >
@@ -4135,50 +4082,6 @@ export const WarbandRosterView: React.FC = () => {
                               </div>
                             )}
                           </div>
-                          {item && isRenamingSlotItem && (
-                            <div className="flex items-center gap-1.5 bg-stone-900 border border-amber-600/50 rounded-lg p-1.5">
-                              <input
-                                type="text"
-                                value={renameItemText}
-                                onChange={(e) => setRenameItemText(e.target.value)}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
-                                    e.preventDefault();
-                                    handleSaveItemCustomName(item.instanceId);
-                                  }
-                                  if (e.key === 'Escape') {
-                                    setRenamingItemId(null);
-                                  }
-                                }}
-                                placeholder={`Custom name for ${eq?.name || 'item'}...`}
-                                autoFocus
-                                className="flex-1 bg-stone-950 border border-stone-700 rounded px-2 py-1 text-[11px] text-stone-100"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => handleSaveItemCustomName(item.instanceId)}
-                                className="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-stone-950 font-bold text-[10px] cursor-pointer"
-                              >
-                                Save
-                              </button>
-                              {item.customName && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleSaveItemCustomName(item.instanceId, '')}
-                                  className="px-1.5 py-1 rounded bg-stone-800 hover:bg-red-950/60 text-red-300 text-[10px] cursor-pointer"
-                                >
-                                  Clear
-                                </button>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => setRenamingItemId(null)}
-                                className="px-1.5 py-1 rounded bg-stone-800 hover:bg-stone-700 text-stone-300 text-[10px] cursor-pointer"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          )}
                         </div>
                       );
                     })}
@@ -5312,6 +5215,37 @@ export const WarbandRosterView: React.FC = () => {
               rules={rules}
               initialSkillOrSpellId={selectedSkillOrSpell.skillOrSpellId}
               onClose={() => setSelectedSkillOrSpell(null)}
+              onOpenStatRoller={(f, statKey) =>
+                setInspectTarget({ fighterId: f.id, tab: statKey })
+              }
+            />
+          );
+        })()}
+
+      {/* Equipment Detail & Custom Name Modal */}
+      {selectedEquipmentModal &&
+        (() => {
+          const targetFighter = selectedEquipmentModal.fighterId
+            ? activeWarband.fighters.find(
+                (f) => f.id === selectedEquipmentModal.fighterId
+              ) || null
+            : null;
+          return (
+            <EquipmentDetailModal
+              initialItemInstanceId={selectedEquipmentModal.itemInstanceId}
+              inventory={activeWarband.inventory}
+              fighter={targetFighter}
+              rules={rules}
+              onClose={() => setSelectedEquipmentModal(null)}
+              onSaveCustomName={handleSaveItemCustomName}
+              onMoveToStash={
+                targetFighter
+                  ? (instanceId) => handleMoveItem(instanceId, null)
+                  : undefined
+              }
+              onAdjustQuantity={(item, delta) =>
+                handleAdjustStackQuantity(item, delta, false)
+              }
               onOpenStatRoller={(f, statKey) =>
                 setInspectTarget({ fighterId: f.id, tab: statKey })
               }

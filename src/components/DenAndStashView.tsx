@@ -9,12 +9,14 @@ import {
   formatItemDisplayName,
   getAllegianceStartingRareEquipment,
   getEquipmentCostForAllegiance,
+  getEquipmentPageReference,
   getItemQuantity,
   isEligibleWeaponForUpgrade,
   isEquipmentStackable,
   isWeaponUpgradeEquipment,
   validateEquipmentForFighter,
 } from '../utils/gameMath';
+import { EquipmentDetailModal } from './EquipmentDetailModal';
 import {
   Home,
   Package,
@@ -67,8 +69,25 @@ export const DenAndStashView: React.FC = () => {
     'full'
   );
   const [customStashSellAmount, setCustomStashSellAmount] = useState<number>(10);
+  const [selectedStashItemId, setSelectedStashItemId] = useState<string | null>(null);
 
   if (!activeWarband) return null;
+
+  const handleSaveItemCustomName = async (
+    instanceId: string,
+    customName: string
+  ) => {
+    const trimmed = customName.trim();
+    const updatedInventory = activeWarband.inventory.map((item) =>
+      item.instanceId === instanceId
+        ? { ...item, customName: trimmed || undefined }
+        : item
+    );
+    await saveWarband({
+      ...activeWarband,
+      inventory: updatedInventory,
+    });
+  };
 
   const allegiance = rules.allegiances.find((a) => a.id === activeWarband.allegianceId);
   const allegianceRareOptions = getAllegianceStartingRareEquipment(allegiance);
@@ -926,15 +945,24 @@ export const DenAndStashView: React.FC = () => {
                 {stashedItems.map((item) => {
                   const eq = rules.equipment.find((e) => e.id === item.equipmentId);
                   const sellPrice = getStashedItemSellPrice(item);
+                  const pageRef = getEquipmentPageReference(eq).replace('Page ', 'p.');
                   return (
                     <div
                       key={item.instanceId}
                       className="bg-stone-950 border border-stone-800 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
                     >
                       <div>
-                        <span className="font-bold text-stone-100">
-                          {formatItemDisplayName(item, eq)}
-                        </span>{' '}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedStashItemId(item.instanceId)}
+                          title="Tap to view rules, upgrades & edit custom name"
+                          className="font-bold text-amber-200 hover:text-amber-300 hover:underline text-left cursor-pointer"
+                        >
+                          {formatItemDisplayName(item, eq)}{' '}
+                          <span className="text-[10px] font-normal text-stone-400">
+                            ({pageRef})
+                          </span>
+                        </button>{' '}
                         <span className="text-stone-400">
                           ({eq?.category} • Value {item.purchaseCost}p)
                         </span>
@@ -1051,6 +1079,18 @@ export const DenAndStashView: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Equipment Detail & Custom Name Modal for Stashed Items */}
+      {selectedStashItemId && (
+        <EquipmentDetailModal
+          initialItemInstanceId={selectedStashItemId}
+          inventory={activeWarband.inventory}
+          fighter={null}
+          rules={rules}
+          onClose={() => setSelectedStashItemId(null)}
+          onSaveCustomName={handleSaveItemCustomName}
+        />
+      )}
     </div>
   );
 };

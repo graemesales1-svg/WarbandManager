@@ -10,6 +10,8 @@ import {
   computeFighterCombatBreakdown,
   formatItemDisplayName,
   formatSigned,
+  getEffectiveEquipmentType,
+  getEquipmentPageReference,
   getFighterFatePoints,
   getItemQuantity,
   getStartingFatePointsForRole,
@@ -24,6 +26,7 @@ import {
   ModalInspectTab,
 } from './StatRollAndBreakdownModal';
 import { SkillOrSpellDetailModal } from './SkillOrSpellDetailModal';
+import { EquipmentDetailModal } from './EquipmentDetailModal';
 import {
   Heart,
   Sparkles,
@@ -62,6 +65,10 @@ export const ActiveGameTrackerView: React.FC = () => {
     fighterId: string;
     skillOrSpellId: string;
   } | null>(null);
+  const [selectedEquipmentModal, setSelectedEquipmentModal] = useState<{
+    fighterId: string;
+    itemInstanceId: string;
+  } | null>(null);
 
   if (!activeWarband) return null;
 
@@ -78,6 +85,23 @@ export const ActiveGameTrackerView: React.FC = () => {
   const skillModalFighter = selectedSkillOrSpell
     ? activeWarband.fighters.find((f) => f.id === selectedSkillOrSpell.fighterId) ?? null
     : null;
+  const equipmentModalFighter = selectedEquipmentModal
+    ? activeWarband.fighters.find((f) => f.id === selectedEquipmentModal.fighterId) ??
+      null
+    : null;
+
+  const handleSaveItemCustomName = async (instanceId: string, customName: string) => {
+    const trimmed = customName.trim();
+    const updatedInventory = activeWarband.inventory.map((item) =>
+      item.instanceId === instanceId
+        ? { ...item, customName: trimmed || undefined }
+        : item
+    );
+    await saveWarband({
+      ...activeWarband,
+      inventory: updatedInventory,
+    });
+  };
 
   const handleWoundsDelta = async (fighter: Fighter, delta: number, maxWounds: number) => {
     const nextWounds = Math.max(0, Math.min(maxWounds, fighter.currentWounds + delta));
@@ -555,22 +579,56 @@ export const ActiveGameTrackerView: React.FC = () => {
               </div>
 
               {/* Weapons & Skills Quick Reference */}
-              <div className="text-xs space-y-1.5 bg-stone-950/60 p-2.5 rounded-xl border border-stone-800/70">
+              <div className="text-xs space-y-2 bg-stone-950/60 p-2.5 rounded-xl border border-stone-800/70">
                 <div>
-                  <Sword className="w-3.5 h-3.5 inline text-amber-400 mr-1" />
-                  <strong className="text-stone-300">Gear: </strong>
-                  {equipped.length === 0
-                    ? 'Unarmed'
-                    : equipped
-                        .map((i) => {
-                          const eq = rules.equipment.find(
-                            (e) => e.id === i.equipmentId
-                          );
-                          return `${formatItemDisplayName(i, eq)}${
-                            eq?.weaponModifiers ? ` (${eq.weaponModifiers})` : ''
-                          }`;
-                        })
-                        .join(' • ')}
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <Sword className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <strong className="text-stone-300">Equipped Gear</strong>
+                    <span className="text-[10px] text-stone-500 italic">
+                      (tap badge for rules, upgrades &amp; custom name)
+                    </span>
+                  </div>
+                  {equipped.length === 0 ? (
+                    <span className="text-stone-500 italic">Unarmed &amp; Unarmoured</span>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {equipped.map((i) => {
+                        const eq = rules.equipment.find((e) => e.id === i.equipmentId);
+                        const eqType = eq ? getEffectiveEquipmentType(eq) : 'Item';
+                        const pageRef = getEquipmentPageReference(eq).replace(
+                          'Page ',
+                          'p.'
+                        );
+                        return (
+                          <button
+                            key={i.instanceId}
+                            type="button"
+                            onClick={() =>
+                              setSelectedEquipmentModal({
+                                fighterId: fighter.id,
+                                itemInstanceId: i.instanceId,
+                              })
+                            }
+                            title={`${formatItemDisplayName(i, eq)} (${getEquipmentPageReference(
+                              eq
+                            )}): ${eq?.weaponModifiers || eq?.description || ''}`}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition cursor-pointer shadow-xs ${
+                              eqType === 'Weapon'
+                                ? 'bg-amber-950/80 hover:bg-amber-900/80 text-amber-200 border-amber-700/60 hover:border-amber-400'
+                                : eqType === 'Armour'
+                                ? 'bg-sky-950/80 hover:bg-sky-900/80 text-sky-200 border-sky-700/60 hover:border-sky-400'
+                                : 'bg-stone-800/90 hover:bg-stone-700 text-stone-200 border-stone-700 hover:border-amber-500/60'
+                            }`}
+                          >
+                            <span>{formatItemDisplayName(i, eq)}</span>
+                            <span className="text-[9px] font-normal opacity-80 bg-stone-950/70 px-1 py-0.2 rounded">
+                              {pageRef}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
 
                 {/* Interactive Consumables & Ammunition Tracker (Arrows, Shot, Powder, Potions, Poisons, Ingredients) */}
@@ -602,9 +660,18 @@ export const ActiveGameTrackerView: React.FC = () => {
                               title={eq?.description}
                               className="flex items-center gap-1.5 bg-stone-900 border border-amber-700/40 rounded-lg px-2 py-1 text-[11px]"
                             >
-                              <span className="font-semibold text-amber-200">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setSelectedEquipmentModal({
+                                    fighterId: fighter.id,
+                                    itemInstanceId: cItem.instanceId,
+                                  })
+                                }
+                                className="font-semibold text-amber-200 hover:text-amber-100 hover:underline cursor-pointer"
+                              >
                                 {formatItemDisplayName(cItem, eq)}
-                              </span>
+                              </button>
                               <button
                                 type="button"
                                 onClick={() => handleAdjustConsumable(cItem, -1)}
@@ -793,6 +860,22 @@ export const ActiveGameTrackerView: React.FC = () => {
           initialSkillOrSpellId={selectedSkillOrSpell.skillOrSpellId}
           onClose={() => setSelectedSkillOrSpell(null)}
           onSpendFatePoint={(f) => handleFateDelta(f, -1)}
+          onOpenStatRoller={(f, statKey) =>
+            setInspectTarget({ fighterId: f.id, tab: statKey })
+          }
+        />
+      )}
+
+      {/* Equipment Detail & Custom Name Modal */}
+      {selectedEquipmentModal && (
+        <EquipmentDetailModal
+          initialItemInstanceId={selectedEquipmentModal.itemInstanceId}
+          inventory={activeWarband.inventory}
+          fighter={equipmentModalFighter}
+          rules={rules}
+          onClose={() => setSelectedEquipmentModal(null)}
+          onSaveCustomName={handleSaveItemCustomName}
+          onAdjustQuantity={(item, delta) => handleAdjustConsumable(item, delta)}
           onOpenStatRoller={(f, statKey) =>
             setInspectTarget({ fighterId: f.id, tab: statKey })
           }
