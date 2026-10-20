@@ -766,7 +766,28 @@ export const RulesDataManager: React.FC = () => {
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {[...rules.skillsAndSpells]
-              .sort((a, b) => a.name.localeCompare(b.name))
+              .sort((a, b) => {
+                const order: Record<SkillOrSpellCategory, number> = {
+                  'Fighting Skill': 1,
+                  'Shooting Skill': 2,
+                  'Cunning Skill': 3,
+                  'Strength Skill': 4,
+                  'Movement Skill': 5,
+                  'Magic Spell': 6,
+                  'Innate Skill': 7,
+                };
+                const catDiff = (order[a.category] ?? 99) - (order[b.category] ?? 99);
+                if (catDiff !== 0) return catDiff;
+                if (a.category === 'Magic Spell' && b.category === 'Magic Spell') {
+                  const archCmp = (a.magicalArchetype || 'ZZZ').localeCompare(
+                    b.magicalArchetype || 'ZZZ',
+                    undefined,
+                    { numeric: true }
+                  );
+                  if (archCmp !== 0) return archCmp;
+                }
+                return a.name.localeCompare(b.name, undefined, { numeric: true });
+              })
               .map((sk) => (
               <div
                 key={sk.id}

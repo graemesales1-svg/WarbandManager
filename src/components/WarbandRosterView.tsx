@@ -9,6 +9,7 @@ import {
   FighterRole,
   FighterStatus,
   MagicalArchetype,
+  SkillOrSpellCategory,
   SkillOrSpellRef,
   StatDieKey,
   StatNumericModifiers,
@@ -83,6 +84,42 @@ const ALL_MAGICAL_ARCHETYPES: MagicalArchetype[] = [
   'Unbound',
   'Wild',
 ];
+
+const LEARNABLE_SKILL_CATEGORIES: {
+  category: SkillOrSpellCategory;
+  label: string;
+}[] = [
+  { category: 'Fighting Skill', label: 'Fighting Skills' },
+  { category: 'Shooting Skill', label: 'Shooting Skills' },
+  { category: 'Cunning Skill', label: 'Cunning Skills' },
+  { category: 'Strength Skill', label: 'Strength Skills' },
+  { category: 'Movement Skill', label: 'Movement Skills' },
+];
+
+const SKILL_CATEGORY_ORDER: Record<SkillOrSpellCategory, number> = {
+  'Fighting Skill': 1,
+  'Shooting Skill': 2,
+  'Cunning Skill': 3,
+  'Strength Skill': 4,
+  'Movement Skill': 5,
+  'Magic Spell': 6,
+  'Innate Skill': 7,
+};
+
+function compareSkillsAndSpells(a: SkillOrSpellRef, b: SkillOrSpellRef): number {
+  const catOrderA = SKILL_CATEGORY_ORDER[a.category] ?? 99;
+  const catOrderB = SKILL_CATEGORY_ORDER[b.category] ?? 99;
+  if (catOrderA !== catOrderB) {
+    return catOrderA - catOrderB;
+  }
+  if (a.category === 'Magic Spell' && b.category === 'Magic Spell') {
+    const archA = a.magicalArchetype || 'ZZZ';
+    const archB = b.magicalArchetype || 'ZZZ';
+    const archCmp = archA.localeCompare(archB, undefined, { numeric: true });
+    if (archCmp !== 0) return archCmp;
+  }
+  return a.name.localeCompare(b.name, undefined, { numeric: true });
+}
 
 const STAT_LABELS: Record<StatDieKey, string> = {
   move: 'Move (M)',
@@ -258,9 +295,7 @@ export const WarbandRosterView: React.FC = () => {
 
   const sortedSpecies = [...rules.species].sort((a, b) => a.name.localeCompare(b.name));
   const sortedEquipment = [...rules.equipment].sort((a, b) => a.name.localeCompare(b.name));
-  const sortedSkillsAndSpells = [...rules.skillsAndSpells].sort((a, b) =>
-    a.name.localeCompare(b.name)
-  );
+  const sortedSkillsAndSpells = [...rules.skillsAndSpells].sort(compareSkillsAndSpells);
   const learnableSkills = sortedSkillsAndSpells.filter(
     (s) => s.category !== 'Innate Skill' && s.category !== 'Magic Spell'
   );
@@ -2622,38 +2657,48 @@ export const WarbandRosterView: React.FC = () => {
                         onChange={(e) => setLeaderSkillId(e.target.value)}
                         className="w-full bg-stone-950 border border-stone-700 rounded-lg px-2.5 py-1.5 text-xs"
                       >
-                        {learnableSkills.map((sk) => {
-                          const effMage =
-                            isMagicUser ||
-                            (allegianceRequiresMagicUser && !overrideMagicRestrictions);
-                          const spellTier =
-                            effMage && selectedSpellIds.length > 0
-                              ? Math.min(8, selectedSpellIds.length)
-                              : 0;
-                          const effOwnedSkills =
-                            spellTier > 0
-                              ? [
-                                  ...selectedSpecies.innateSkillIds,
-                                  `sk-weak-${spellTier}`,
-                                  `sk-delicate-${spellTier}`,
-                                ]
-                              : selectedSpecies.innateSkillIds;
-                          const qual = checkSkillQualification(
-                            sk,
-                            selectedSpecies.id,
-                            effOwnedSkills,
-                            effMage ? selectedSpellIds : [],
-                            rules.skillsAndSpells,
-                            effMage ? [selectedMagicArchetype] : [],
-                            effMage
+                        {LEARNABLE_SKILL_CATEGORIES.map((catGroup) => {
+                          const groupSkills = learnableSkills.filter(
+                            (sk) => sk.category === catGroup.category
                           );
-                          const isDisabled =
-                            !overrideRecruitSkillPrereqs && !qual.qualified;
+                          if (groupSkills.length === 0) return null;
                           return (
-                            <option key={sk.id} value={sk.id} disabled={isDisabled}>
-                              {sk.name} [{sk.category}]
-                              {!qual.qualified ? ` (${qual.reason})` : ''}
-                            </option>
+                            <optgroup key={catGroup.category} label={catGroup.label}>
+                              {groupSkills.map((sk) => {
+                                const effMage =
+                                  isMagicUser ||
+                                  (allegianceRequiresMagicUser && !overrideMagicRestrictions);
+                                const spellTier =
+                                  effMage && selectedSpellIds.length > 0
+                                    ? Math.min(8, selectedSpellIds.length)
+                                    : 0;
+                                const effOwnedSkills =
+                                  spellTier > 0
+                                    ? [
+                                        ...selectedSpecies.innateSkillIds,
+                                        `sk-weak-${spellTier}`,
+                                        `sk-delicate-${spellTier}`,
+                                      ]
+                                    : selectedSpecies.innateSkillIds;
+                                const qual = checkSkillQualification(
+                                  sk,
+                                  selectedSpecies.id,
+                                  effOwnedSkills,
+                                  effMage ? selectedSpellIds : [],
+                                  rules.skillsAndSpells,
+                                  effMage ? [selectedMagicArchetype] : [],
+                                  effMage
+                                );
+                                const isDisabled =
+                                  !overrideRecruitSkillPrereqs && !qual.qualified;
+                                return (
+                                  <option key={sk.id} value={sk.id} disabled={isDisabled}>
+                                    {sk.name} [{sk.category}]
+                                    {!qual.qualified ? ` (${qual.reason})` : ''}
+                                  </option>
+                                );
+                              })}
+                            </optgroup>
                           );
                         })}
                       </select>
@@ -2701,40 +2746,50 @@ export const WarbandRosterView: React.FC = () => {
                       onChange={(e) => setSecondSkillId(e.target.value)}
                       className="w-full bg-stone-950 border border-stone-700 rounded-lg px-2.5 py-1.5 text-xs"
                     >
-                      {learnableSkills.map((sk) => {
-                        const effMage =
-                          isMagicUser ||
-                          (allegianceRequiresMagicUser && !overrideMagicRestrictions);
-                        const spellTier =
-                          effMage && selectedSpellIds.length > 0
-                            ? Math.min(8, selectedSpellIds.length)
-                            : 0;
-                        const effOwnedSkills =
-                          spellTier > 0
-                            ? [
-                                ...selectedSpecies.innateSkillIds,
-                                `sk-weak-${spellTier}`,
-                                `sk-delicate-${spellTier}`,
-                              ]
-                            : selectedSpecies.innateSkillIds;
-                        const qual = checkSkillQualification(
-                          sk,
-                          selectedSpecies.id,
-                          effOwnedSkills,
-                          effMage ? selectedSpellIds : [],
-                          rules.skillsAndSpells,
-                          effMage ? [selectedMagicArchetype] : [],
-                          effMage
+                      {LEARNABLE_SKILL_CATEGORIES.map((catGroup) => {
+                        const groupSkills = learnableSkills.filter(
+                          (sk) => sk.category === catGroup.category
                         );
-                        const isDisabled =
-                          !overrideRecruitSkillPrereqs && !qual.qualified;
+                        if (groupSkills.length === 0) return null;
                         return (
-                          <option key={sk.id} value={sk.id} disabled={isDisabled}>
-                            {sk.name} [{sk.category}]
-                            {!qual.qualified
-                              ? ` (${qual.reason})`
-                              : ` — ${sk.description.slice(0, 55)}...`}
-                          </option>
+                          <optgroup key={catGroup.category} label={catGroup.label}>
+                            {groupSkills.map((sk) => {
+                              const effMage =
+                                isMagicUser ||
+                                (allegianceRequiresMagicUser && !overrideMagicRestrictions);
+                              const spellTier =
+                                effMage && selectedSpellIds.length > 0
+                                  ? Math.min(8, selectedSpellIds.length)
+                                  : 0;
+                              const effOwnedSkills =
+                                spellTier > 0
+                                  ? [
+                                      ...selectedSpecies.innateSkillIds,
+                                      `sk-weak-${spellTier}`,
+                                      `sk-delicate-${spellTier}`,
+                                    ]
+                                  : selectedSpecies.innateSkillIds;
+                              const qual = checkSkillQualification(
+                                sk,
+                                selectedSpecies.id,
+                                effOwnedSkills,
+                                effMage ? selectedSpellIds : [],
+                                rules.skillsAndSpells,
+                                effMage ? [selectedMagicArchetype] : [],
+                                effMage
+                              );
+                              const isDisabled =
+                                !overrideRecruitSkillPrereqs && !qual.qualified;
+                              return (
+                                <option key={sk.id} value={sk.id} disabled={isDisabled}>
+                                  {sk.name} [{sk.category}]
+                                  {!qual.qualified
+                                    ? ` (${qual.reason})`
+                                    : ` — ${sk.description.slice(0, 55)}...`}
+                                </option>
+                              );
+                            })}
+                          </optgroup>
                         );
                       })}
                     </select>
@@ -4769,7 +4824,7 @@ export const WarbandRosterView: React.FC = () => {
                   }}
                   className="flex-1 bg-stone-900 border border-stone-700 rounded-lg px-3 py-1.5 text-xs"
                 >
-                  {sortedSkillsAndSpells.map((s) => {
+                  {(() => {
                     const sp = rules.species.find(
                       (spItem) => spItem.id === selectedFighterForAdvance.speciesId
                     );
@@ -4781,29 +4836,91 @@ export const WarbandRosterView: React.FC = () => {
                       selectedFighterForAdvance,
                       rules.skillsAndSpells
                     );
-                    const qual = checkSkillQualification(
-                      s,
-                      selectedFighterForAdvance.speciesId,
-                      ownedSkills,
-                      selectedFighterForAdvance.learnedSpellIds,
-                      rules.skillsAndSpells,
-                      fighterArchs,
-                      Boolean(
-                        selectedFighterForAdvance.isMagicUser ||
-                          selectedFighterForAdvance.learnedSpellIds.length > 0 ||
-                          fighterArchs.length > 0
-                      )
+                    const isMage = Boolean(
+                      selectedFighterForAdvance.isMagicUser ||
+                        selectedFighterForAdvance.learnedSpellIds.length > 0 ||
+                        fighterArchs.length > 0
                     );
-                    const isDisabled = !overrideAdvSkillPrereqs && !qual.qualified;
+
+                    const renderOption = (s: SkillOrSpellRef) => {
+                      const qual = checkSkillQualification(
+                        s,
+                        selectedFighterForAdvance.speciesId,
+                        ownedSkills,
+                        selectedFighterForAdvance.learnedSpellIds,
+                        rules.skillsAndSpells,
+                        fighterArchs,
+                        isMage
+                      );
+                      const isDisabled = !overrideAdvSkillPrereqs && !qual.qualified;
+                      const catTag =
+                        s.category === 'Magic Spell' && s.magicalArchetype
+                          ? `${s.magicalArchetype} Spell`
+                          : s.category;
+                      return (
+                        <option key={s.id} value={s.id} disabled={isDisabled}>
+                          {s.name} [{catTag}]
+                          {!qual.qualified
+                            ? ` (${qual.reason})`
+                            : ` — ${s.description.slice(0, 60)}...`}
+                        </option>
+                      );
+                    };
+
+                    const uncategorizedSpells = sortedSkillsAndSpells.filter(
+                      (s) =>
+                        s.category === 'Magic Spell' &&
+                        (!s.magicalArchetype ||
+                          !ALL_MAGICAL_ARCHETYPES.includes(s.magicalArchetype))
+                    );
+                    const innateSkills = sortedSkillsAndSpells.filter(
+                      (s) => s.category === 'Innate Skill'
+                    );
+
                     return (
-                      <option key={s.id} value={s.id} disabled={isDisabled}>
-                        {s.name} [{s.category}]
-                        {!qual.qualified
-                          ? ` (${qual.reason})`
-                          : ` — ${s.description.slice(0, 60)}...`}
-                      </option>
+                      <>
+                        {LEARNABLE_SKILL_CATEGORIES.map((catGroup) => {
+                          const groupItems = sortedSkillsAndSpells.filter(
+                            (s) => s.category === catGroup.category
+                          );
+                          if (groupItems.length === 0) return null;
+                          return (
+                            <optgroup key={catGroup.category} label={catGroup.label}>
+                              {groupItems.map(renderOption)}
+                            </optgroup>
+                          );
+                        })}
+
+                        {ALL_MAGICAL_ARCHETYPES.map((arch) => {
+                          const archSpells = sortedSkillsAndSpells.filter(
+                            (s) =>
+                              s.category === 'Magic Spell' && s.magicalArchetype === arch
+                          );
+                          if (archSpells.length === 0) return null;
+                          return (
+                            <optgroup
+                              key={`spell-arch-${arch}`}
+                              label={`✦ ${arch} Magic Spells`}
+                            >
+                              {archSpells.map(renderOption)}
+                            </optgroup>
+                          );
+                        })}
+
+                        {uncategorizedSpells.length > 0 && (
+                          <optgroup label="✦ Other Magic Spells">
+                            {uncategorizedSpells.map(renderOption)}
+                          </optgroup>
+                        )}
+
+                        {innateSkills.length > 0 && (
+                          <optgroup label="Innate & Species Skills">
+                            {innateSkills.map(renderOption)}
+                          </optgroup>
+                        )}
+                      </>
                     );
-                  })}
+                  })()}
                 </select>
                 <button
                   onClick={() => handleLearnSkillOrSpell(selectedFighterForAdvance)}
