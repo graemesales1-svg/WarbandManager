@@ -31,7 +31,6 @@ export const CloudAndAuthModal: React.FC<Props> = ({ onClose }) => {
     lastSyncedAt,
     lastSyncError,
     cloudWarbandCount,
-    signInWithGoogle,
     signInWithEmail,
     signUpWithEmail,
     sendMagicLink,
@@ -356,7 +355,7 @@ export const CloudAndAuthModal: React.FC<Props> = ({ onClose }) => {
                     <button
                       type="submit"
                       disabled={authBusy}
-                      className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-stone-950 text-xs font-bold cursor-pointer disabled:opacity-50"
+                      className="w-full flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-stone-950 text-xs font-bold cursor-pointer disabled:opacity-50"
                     >
                       {authMode === 'magic' ? (
                         <>
@@ -370,61 +369,12 @@ export const CloudAndAuthModal: React.FC<Props> = ({ onClose }) => {
                         </>
                       )}
                     </button>
-                    <button
-                      type="button"
-                      onClick={signInWithGoogle}
-                      className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 border border-stone-700 text-stone-200 text-xs font-semibold cursor-pointer"
-                    >
-                      Sign in with Google
-                    </button>
                   </div>
                 </form>
               </div>
             </>
           )}
         </div>
-
-        {/* Supabase Cloud Credentials Form */}
-        <form
-          onSubmit={handleSaveSupabaseConfig}
-          className="bg-stone-950 border border-stone-800 rounded-xl p-4 space-y-3"
-        >
-          <div className="flex items-center justify-between">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-amber-400">
-              Supabase Cloud Connection ($0/mo Free Tier)
-            </h4>
-            {isCloudConfigured && (
-              <span className="flex items-center gap-1 text-[11px] text-emerald-400 font-semibold">
-                <CheckCircle2 className="w-3.5 h-3.5" /> Connected
-              </span>
-            )}
-          </div>
-          <p className="text-[11px] text-stone-400">
-            Run <code className="text-amber-300">supabase/migrations/001_initial_schema.sql</code> in your Supabase SQL Editor, then paste your Project URL &amp; Anon Key below (or set <code className="text-amber-300">VITE_SUPABASE_URL</code> and <code className="text-amber-300">VITE_SUPABASE_ANON_KEY</code> in <code className="text-amber-300">.env</code> when hosting so friends connect automatically).
-          </p>
-          <div className="space-y-2">
-            <input
-              value={sbUrl}
-              onChange={(e) => setSbUrl(e.target.value)}
-              placeholder="https://your-project.supabase.co"
-              className="w-full bg-stone-900 border border-stone-700 rounded-lg px-3 py-1.5 text-xs font-mono text-stone-200"
-            />
-            <input
-              value={sbKey}
-              onChange={(e) => setSbKey(e.target.value)}
-              placeholder="Supabase public anon key (eyJ...)"
-              className="w-full bg-stone-900 border border-stone-700 rounded-lg px-3 py-1.5 text-xs font-mono text-stone-200"
-            />
-          </div>
-          <div className="flex justify-end">
-            <button
-              type="submit"
-              className="px-3.5 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-amber-300 text-xs font-semibold border border-stone-700 cursor-pointer"
-            >
-              Save Cloud Connection
-            </button>
-          </div>
-        </form>
 
         {/* Full JSON Backup Export / Import */}
         <div className="bg-stone-950 border border-stone-800 rounded-xl p-4 space-y-3">
@@ -459,6 +409,48 @@ export const CloudAndAuthModal: React.FC<Props> = ({ onClose }) => {
             </div>
           )}
         </div>
+
+        {/* Supabase Cloud Credentials Form */}
+        <form
+          onSubmit={handleSaveSupabaseConfig}
+          className="bg-stone-950 border border-stone-800 rounded-xl p-4 space-y-3"
+        >
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-amber-400">
+              Supabase Cloud Connection
+            </h4>
+            {isCloudConfigured && (
+              <span className="flex items-center gap-1 text-[11px] text-emerald-400 font-semibold">
+                <CheckCircle2 className="w-3.5 h-3.5" /> Connected
+              </span>
+            )}
+          </div>
+          <p className="text-[11px] text-stone-400">
+            Override Supabase URL and anon key here if you plan on using your own database connection.
+          </p>
+          <div className="space-y-2">
+            <input
+              value={sbUrl}
+              onChange={(e) => setSbUrl(e.target.value)}
+              placeholder="https://your-project.supabase.co"
+              className="w-full bg-stone-900 border border-stone-700 rounded-lg px-3 py-1.5 text-xs font-mono text-stone-200"
+            />
+            <input
+              value={sbKey}
+              onChange={(e) => setSbKey(e.target.value)}
+              placeholder="Supabase public anon key (eyJ...)"
+              className="w-full bg-stone-900 border border-stone-700 rounded-lg px-3 py-1.5 text-xs font-mono text-stone-200"
+            />
+          </div>
+          <div className="flex justify-end">
+            <button
+              type="submit"
+              className="px-3.5 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-amber-300 text-xs font-semibold border border-stone-700 cursor-pointer"
+            >
+              Save Cloud Connection
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
